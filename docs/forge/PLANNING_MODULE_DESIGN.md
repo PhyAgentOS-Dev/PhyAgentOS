@@ -260,6 +260,51 @@ semantics. A final verification node joins the discovered obligations. The
 graph must remain valid when the scene contains a different number of blocks,
 additional colors, duplicate colors, or an empty/partially observed set.
 
+The unknown inventory creates a progressive-planning requirement. The current
+task API can create a task with a final graph or with no graph, while
+`AgentComposedDispatch` requires a concrete graph and `begin_revision()` is
+normally entered after `awaiting_replan`. A production flow therefore needs a
+same-`AgentTask` discovery checkpoint: observe and validate the scene first,
+then let the planner propose an expanded graph in a new `PlanRevision`, while
+preserving the observation evidence. This is a revision/expansion transition,
+not a second task and not a fixed RGB graph.
+
+The requested order must be explicit in the task goal or verification
+contract. If "RGB" supplies the comparator (for example red, then green, then
+blue), the planner can bind discovered entities to that comparator. If the
+ordering rule or target layout is ambiguous, the Agent must ask or produce an
+unknown verification outcome; it must not infer a layout from a color name.
+
+### Failure cases exposed by the scenario
+
+An object can be dropped during an Action in two observably different ways:
+
+- the Action returns `failed` or `outcome_unknown`; the active node can be
+  settled directly and its descendants invalidated;
+- the Action returns success, but a later observation/verification supplies
+  counterevidence that the object is no longer in the required place. In this
+  case the later evidence must mark the affected obligation stale/failed and
+  trigger a new revision; the system must not rewrite the historical success.
+
+The second case requires a generic postcondition/observation checkpoint and
+an evidence-to-obligation attribution. It cannot be implemented as an
+RGB-specific "dropped block" branch. The new revision should preserve only
+nodes whose evidence remains valid, invalidate the affected obligation and its
+descendants, and carry the counterevidence into the Agent's replan context.
+
+The current `begin_revision_from_delta()` validates task/revision identity and
+accepts a replacement graph, but does not itself materialize
+`preserve_node_ids`, `invalidate_node_ids`, or `fresh_evidence_requirements`.
+The loop adapter must apply those fields when constructing the replacement
+revision and when selecting predecessor context; otherwise a replay could
+reuse evidence from an invalidated branch.
+
+Each world-changing node may advance the scene revision. Before the next node,
+the trusted context provider must refresh the scene/evidence view and reject
+stale predecessor facts. A re-observation node or a planner-selected
+fresh-evidence requirement is preferable to silently continuing from the
+initial scene graph.
+
 ### Minimal loop that reuses PAOS authorities
 
 The missing connection is a thin `PlanningLoopAdapter`, not another runtime.
@@ -374,9 +419,11 @@ planner runtime embedded in `PhyAgentOS/planning`.
 
 The scenario is architecturally compatible, but the following pieces are not
 yet complete in the current implementation: a general decomposer/plugin seam;
-durable `NodeSettlement` storage; a public node-scoped AgentLoop entry point;
-automatic settlement-to-ready progression; bounded Agent-selected replan
-application; and predecessor-context injection into the node prompt.
+same-task discovery-to-DAG revision expansion; durable `NodeSettlement`
+storage; a public node-scoped AgentLoop entry point; automatic
+settlement-to-ready progression; bounded Agent-selected replan application;
+post-action counterevidence attribution; preserve/invalidate application; and
+predecessor-context injection into the node prompt.
 
 The smallest coherent implementation slice is: persist settlements in the
 existing `PlanRevision`, add a `NodeContextProvider` that injects one direct
