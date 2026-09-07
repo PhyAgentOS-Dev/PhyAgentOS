@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.8] - 2026-09-07
+
+Documented the cross-benchmark reuse boundary for single-arm Franka providers. PAOS Core, planning, Skill, capability, and lifecycle contracts are reusable; RoboTwin runtime, route readiness, probe, and collision-world code still require explicit single-arm topology branches.
+
+记录跨 benchmark 单臂 Franka provider 的代码复用边界。PAOS Core、planning、Skill、capability 和生命周期协议可复用；RoboTwin runtime、route readiness、probe 与 collision-world 仍需显式单臂 topology 分支。
+
+Files: `docs/forge/DUAL_ARM_PLANNING_EXECUTION_PLAN.md:L420-L458`.
+
+Validation: documentation-only change; `git diff --check` passed and no simulation or motion was run.
+
 ## [v6.8.7] - 2026-09-07
 
 Clarified that the current RoboTwin integration supports sequential dual-arm execution only: one arm is driven at a time and the peer arm is held/parked and projected as a static obstacle. Simultaneous synchronized bimanual motion is not implemented.

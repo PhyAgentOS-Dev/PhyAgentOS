@@ -418,3 +418,36 @@ Agent
 - 选中臂仍按现有 provider route 执行，另一臂当前采用 `hold` 语义；尚未实现 park route、combined-robot synchronized trajectory、inter-arm swept-volume 动态证明或 Gateway atomic bundle。
 
 因此本轮完成的是“顺序双臂的状态绑定 + peer-arm 静态碰撞投影 + 接触归因基础”，不是完整双臂动作成功证明。要进入新的 simulation-only probe，必须重新生成包含双臂状态/peer projection 的 route package 并取得与新 worker 源码绑定的人工批准；既有 approval 不能复用。
+
+## 12. 跨 benchmark 的单臂复用边界
+
+PAOS Core 已经支持 `single_arm` topology：`CapabilitySnapshot` 允许一个 `ArmCapability`，`ManipulationIntent.allowed_arms` 和 `ArmAssignment.selected_arm_ids` 不要求固定为 `left/right`。因此更换为“另一个只有一只 Franka 的 benchmark”时，以下部分可以直接复用：
+
+- AgentTask、PlanGraph、PlanRevision、Tool admission 和重规划协议；
+- Skill 的语义 pick/place 子任务和验证检查点；
+- provider-neutral capability/readiness/evidence 接口；
+- Gateway、Verifier、Experience 和策略演化边界。
+
+但当前 RoboTwin20 provider 还不是直接即插即用，原因是它仍有双臂专用假设：
+
+1. runtime profile 目前只表达 `native-dual-arm` 或 `two-single-arm`，没有单臂 embodiment 形态；
+2. route readiness 当前要求两份 motion capability；
+3. simulation probe 固定访问 `left_entity/right_entity`、左右 planner 和左右 gripper；
+4. collision-world port 当前要求两个 planner，并默认构建双臂 peer projection；
+5. 当前 RoboTwin 的 `Robot` 实现本身按左右实体初始化，不能把“复制同一配置两次”当作单臂 benchmark。
+
+因此，正确的复用改造是让 provider profile 显式声明 topology 和 arm 列表：
+
+```text
+topology = single_arm
+arms = [arm0]
+
+topology = dual_independent
+arms = [left, right]
+```
+
+单臂 provider 只实现一个 planner、一个 controller 和静态环境 collision world；双臂 provider 才启用 hold/park 与 peer-arm projection。二者共享同一个 `DualArmPlannerPort` 语义边界，但不共享另一臂的伪状态。
+
+benchmark 切换必须发生在新 `AgentTask` 或 `PlanRevision` 边界，并重新生成 capability snapshot、route、readiness 和 provider evidence。不能在执行中的 route 中热切换 embodiment，也不能把旧双臂 approval 复用于单臂 provider。
+
+这保证了“代码复用”与“物理实现替换”同时成立：上层语义和生命周期稳定，provider 根据实际 embodiment 提供一臂或双臂能力；PAOS 不引入第二套单臂系统，也不把 RoboTwin 的左右臂细节泄漏到 Core。
