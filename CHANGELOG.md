@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.7] - 2026-09-07
+
+Clarified that the current RoboTwin integration supports sequential dual-arm execution only: one arm is driven at a time and the peer arm is held/parked and projected as a static obstacle. Simultaneous synchronized bimanual motion is not implemented.
+
+明确当前 RoboTwin 集成仅支持顺序双臂执行：一次只驱动一只机械臂，另一只机械臂保持/停放并作为静态障碍投影。同时同步双臂运动尚未实现。
+
+Files: `docs/forge/DUAL_ARM_PLANNING_EXECUTION_PLAN.md:L61-L63`.
+
+Validation: documentation-only change; `git diff --check` passed and no simulation or motion was run.
+
 ## [v6.8.6] - 2026-09-07
 
 Implemented provider-owned dual-arm planning state, qualified arm/link contact identity, held-arm drift checks, and peer-arm static collision projection for sequential RoboTwin planning. Curobo remains behind the adapter port; synchronized atomic dual-arm execution is still not claimed.
