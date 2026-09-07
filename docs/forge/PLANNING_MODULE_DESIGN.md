@@ -229,3 +229,159 @@ capacity is insufficient, the runtime port rebuilds warmed `MotionGen` and batch
 the existing RoboTwin robot profile and complete `WorldConfig`, then swaps both arm references
 only after all replacements succeed. This is provider behavior, not planning-module logic; no
 `scene.step()` or motion authorization occurs during rebuild.
+
+## Generic attribute-sorting scenario and execution-loop extension (2026-09-07)
+
+### Scenario fit
+
+The user request "arrange blocks by RGB/color" is a valid instance of a
+generic attribute-sorting task, not a request for an RGB-specific workflow.
+The request intentionally omits the number of blocks, the set of observed
+colors, and their initial locations. Those values must be discovered from the
+live observation Skill and represented as evidence; they must not be placed in
+the planner, a Skill prompt, or a fixed DAG template.
+
+The intended flow is therefore:
+
+```text
+natural-language goal
+  -> Agent selects an observation/understanding Skill
+  -> live scene observation and scene-graph evidence
+  -> Agent decomposes the discovered entities and ordering obligations
+  -> generic PlanGraph (one semantic obligation per entity/group)
+  -> node-scoped Agent execution through existing Forge Tools
+  -> NodeSettlement and evidence update
+  -> next ready node, or bounded replay/replan after a failure
+```
+
+The decomposition may produce nodes such as `sort-group/<opaque-id>` or
+`arrange/<opaque-id>`, but these are planner outputs, not PAOS-owned RGB
+semantics. A final verification node joins the discovered obligations. The
+graph must remain valid when the scene contains a different number of blocks,
+additional colors, duplicate colors, or an empty/partially observed set.
+
+### Minimal loop that reuses PAOS authorities
+
+The missing connection is a thin `PlanningLoopAdapter`, not another runtime.
+It consumes the persisted `PlanRevision.plan_graph`, calls the existing
+`AgentComposedDispatch` for ready-node and Tool admission, and invokes one
+node-scoped turn of the existing `AgentLoop`. The loop writes execution facts
+through `AgentTaskCoordinator`; it does not write a parallel state file or
+invoke a Gateway directly.
+
+For each selected ready node:
+
+1. Build a bounded node prompt from the node declaration and the direct
+   predecessor's persisted settlement/evidence summary.
+2. Run the normal AgentLoop Tool-call loop with the planning guard enabled.
+3. Convert terminal `ToolExecutionRecord` facts to `ToolResultEnvelope`, then
+   call the pure `settle_node()` function.
+4. Persist the resulting `NodeSettlement` in the active `PlanRevision` and
+   refresh the trusted `AdmissionContext`.
+5. Call `derive_ready_nodes()` and continue until the graph is complete or a
+   non-success settlement requires recovery.
+
+`NodeSettlement` should become a field of the existing `PlanRevision` rather
+than a second store. Deriving settlement only from Tool records is acceptable
+for an initial experiment, but is ambiguous when one semantic node selects
+multiple Tools or has an unknown outcome; durable node settlement is required
+for reliable replay and recovery.
+
+### Minimum predecessor-context injection
+
+The first implementation only needs direct-predecessor context. A
+`NodeContextProvider` outside the pure planning package can project:
+
+- current `task_id`, `revision_id`, and `node_id`;
+- the current node's capability, dependencies, and required evidence;
+- each direct predecessor's terminal status;
+- opaque `evidence_refs`/`output_refs`, source Tool ID, and failure code;
+- preserved constraints from the latest replan decision.
+
+The projection is inserted into the node-scoped Agent turn as data, not as a
+new authority. Raw provider payloads, unverified coordinates, controller
+parameters, and arbitrary workspace text are excluded. A predecessor result
+can therefore tell the current Agent "acquisition completed and produced
+evidence X" or "the prior attempt is unknown; re-observe before acting",
+without allowing the Agent to assert that the scene is current.
+
+This reuses `ToolExecutionRecord`, `NodeSettlement`, `AgentTaskStore.events()`,
+the existing evidence references, and advisory Experience lessons. It does not
+require a second memory database or a second prompt protocol.
+
+### Failure, replay, and replan semantics
+
+The physical-drop example is represented as a normal node outcome, not as an
+RGB-specific exception:
+
+```text
+node action result
+  -> failed / outcome_unknown / stale
+  -> settle_node()
+  -> build_replan_delta()
+  -> Agent proposes a replacement graph or bounded retry
+  -> coordinator appends a new PlanRevision
+  -> adapter resumes from the new revision
+```
+
+The Agent may choose the recovery strategy from the failure feedback, but it
+cannot mutate the active graph or mark a node successful by assertion.
+`ReplanDelta` remains the bounded description of preserved nodes, invalidated
+descendants, retry lineage, and fresh evidence requirements;
+`AgentTaskCoordinator` remains the owner that accepts a new revision and
+enforces the retry budget/deadline.
+
+Replay must be split into two operations:
+
+- **Reducer replay:** replay stored Tool results and settlements without any
+  Gateway call. This is safe for diagnosing the DAG and rebuilding ready sets.
+- **Execution rerun:** execute a node again. Query reruns may create another
+  execution record; Action/Session reruns require a new revision, fresh
+  admission, and explicit `retry_of` lineage so a physical side effect is not
+  silently duplicated.
+
+The recovery policy is selected by the Agent/Planner Plugin from the failure
+feedback. PAOS supplies the facts and gates; it does not hard-code a rule such
+as "always retry the dropped block".
+
+### Planner/plugin boundary
+
+The decomposer, node-selection policy, node-context projection, and recovery
+policy belong in an installable planner/Skill plugin. The plugin may call
+`compose_agent_plan()` and return a `PlanGraph`, but it does not own task state,
+Tool transport, Evidence, Verifier semantics, Runtime admission, or motion
+authority. PAOS core exposes only the provider-neutral planning contracts and
+the existing coordinator/AgentLoop seams.
+
+This preserves the current baseline workflow and allows an attribute-sorting
+planner to coexist with other planners. The present repository already has
+Skill Runtime installation and ToolSpec planning projections; the remaining
+extension is a formal planner-plugin interface/discovery seam, not a second
+planner runtime embedded in `PhyAgentOS/planning`.
+
+### Six-dimension acceptance for this extension
+
+| Dimension | Acceptance condition for the attribute-sorting loop |
+| --- | --- |
+| Architecture integration | Reuse AgentLoop, AgentComposedDispatch, AgentTaskCoordinator, PlanRevision, Forge Tool API, Evidence, and Verifier; no second scheduler/store/execution path |
+| Failure paths | Tests cover incomplete observation, empty/duplicate attributes, dependency blocking, failed/unknown/stale/cancelled nodes, dropped-object feedback, replay, replan timeout, and retry-budget exhaustion |
+| Authority boundaries | Planning and plugins remain no-motion; Coordinator owns task/revision state; Gateway owns execution; adapters own physical facts; Verifier owns semantic success |
+| Configuration/provenance | Discovered entities and prior-node context carry task/revision/node/evidence provenance and reuse existing graph, ToolSpec, and trace identities; Agent-supplied facts are not trusted context |
+| Maintainability | One orchestration adapter, one node-context projection, and one plugin interface; existing baseline reducer and Tool wrappers remain usable |
+| Anti-OverDefense | Add checks only for observed hazards such as stale predecessor context and duplicate Action side effects; do not add RGB-specific schemas, fixed block counts, speculative hashes, or duplicate gates |
+
+### Completion status and next implementation slice
+
+The scenario is architecturally compatible, but the following pieces are not
+yet complete in the current implementation: a general decomposer/plugin seam;
+durable `NodeSettlement` storage; a public node-scoped AgentLoop entry point;
+automatic settlement-to-ready progression; bounded Agent-selected replan
+application; and predecessor-context injection into the node prompt.
+
+The smallest coherent implementation slice is: persist settlements in the
+existing `PlanRevision`, add a `NodeContextProvider` that injects one direct
+predecessor summary, and add the thin `PlanningLoopAdapter`. Only after that
+slice is verified should planner-selected replacement graphs and Action-node
+rerun semantics be enabled. The RGB sorting task then becomes a validation
+scenario for generic attribute discovery and recovery rather than a new
+hard-coded workflow.

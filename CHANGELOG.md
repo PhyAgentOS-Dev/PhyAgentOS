@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.13] - 2026-09-07
+
+Recorded the PAOS-compatible generic attribute-sorting scenario and execution-loop extension in `docs/forge/PLANNING_MODULE_DESIGN.md:L233-L387`. The RGB block example is treated as a validation case: block count, colors, and locations are discovered by observation evidence rather than hard-coded. The design reuses AgentLoop, AgentComposedDispatch, AgentTaskCoordinator, PlanRevision, Forge Tools, Evidence, and Verifier; it defines direct-predecessor context injection, NodeSettlement persistence, reducer replay versus Action/Session rerun, Agent-selected ReplanDelta recovery, and a planner/plugin boundary without a second scheduler, store, DAG, or execution protocol.
+
+记录 PAOS 兼容的通用属性排序场景和执行 loop 扩展，详见 `docs/forge/PLANNING_MODULE_DESIGN.md:L233-L387`。RGB 方块仅作为验证场景，方块数量、颜色和位置由 observation evidence 发现，不写死在规划器中。设计复用 AgentLoop、AgentComposedDispatch、AgentTaskCoordinator、PlanRevision、Forge Tools、Evidence 和 Verifier；定义直接前驱上下文注入、NodeSettlement 持久化、reducer replay 与 Action/Session rerun 的区别、Agent 选择的 ReplanDelta 恢复路径以及 planner/plugin 边界，不引入第二套 scheduler、store、DAG 或执行协议。
+
+Files: `docs/forge/PLANNING_MODULE_DESIGN.md:L233-L387`, `changelog/2026-09_part3.md:L3-L51`.
+
+Validation: planning-focused tests `20 passed`; `git diff --check` passed; no code, Gateway, Dora, Action, simulation motion, or hardware was executed or changed.
+
 ## [v6.8.11] - 2026-09-07
 
 Replaced the failed SAPIEN single-box peer-arm extraction with a provider-owned Curobo collision-sphere projection. The held peer arm is evaluated at its captured qpos, transformed through the shared world frame, and loaded into each selected-arm planner as conservative enclosing OBBs because the vendored collision checker does not install `WorldConfig.sphere`. Real no-motion validation loaded 61 peer obstacles plus table and two blocks into each planner.
