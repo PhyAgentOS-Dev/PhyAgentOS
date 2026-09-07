@@ -2,6 +2,26 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.5] - 2026-09-07
+
+Clarified that true dual-arm planning is not the concatenation of two independent Curobo plans. The design now distinguishes static other-arm projection, sequential bimanual execution, and synchronized atomic bimanual execution, with geometry, trajectory, and execution-layer collision checks. The current RoboTwin path remains limited to sequential execution with explicit hold/park semantics.
+
+明确真正的双臂联合规划不是两个独立 Curobo 结果的拼接。设计现在区分另一只机械臂静态投影、顺序双臂执行和同步原子双臂执行，并定义几何层、轨迹层和执行层防碰撞检查。当前 RoboTwin 路径仍限制为带显式 hold/park 语义的顺序执行。
+
+Files: `docs/forge/DUAL_ARM_PLANNING_EXECUTION_PLAN.md:L61-L121`, `changelog/2026-09_part3.md:L3-L20`.
+
+Validation: `git diff --check` passed; no runtime code or simulation motion was changed or executed.
+
+## [v6.8.4] - 2026-09-07
+
+Recorded the PAOS-compatible dual-arm planning protocol and corrected the earlier overclaim that an ambiguous `panda_leftfinger ↔ table` contact proved an unselected-left-arm collision. The document defines reset/stabilization state, qualified contact identity, provider-owned inter-arm projection, route admission, semantic verification, and replanning.
+
+记录 PAOS 兼容的双臂规划协议，并纠正此前将无法区分机械臂的 `panda_leftfinger ↔ table` 接触直接归因于未选中左臂的问题。文档定义 reset/stabilization 状态、qualified contact identity、provider-owned 跨臂投影、路线准入、语义验收和重规划。
+
+Files: `docs/forge/DUAL_ARM_PLANNING_EXECUTION_PLAN.md:L1-L58,L123-L286`, `changelog/2026-09_part3.md:L17-L31`.
+
+Validation: documentation review and `git diff --check` passed; no runtime or motion changes were made.
+
 ## [v6.8.3] - 2026-09-07
 
 Materialized the exact human-approved simulation-only probe package and ran one independent RoboTwin20 probe. The provider executed 1174 simulator steps but returned `unavailable` at retreat because the unselected left arm contacted the table; failure evidence, contact trace, and stop/reset records were persisted. This is a real route-safety failure, not a candidate or speed-tuning success, and no Gateway, Dora, Action, or hardware path was used.
