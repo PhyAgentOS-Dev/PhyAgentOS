@@ -141,6 +141,7 @@ def capture_scene_facts(
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "robot_control_steps": 0,
             "motion_authorized": False,
+            "coverage": "complete",
             "objects": objects,
         }
         validate_scene_facts(value)

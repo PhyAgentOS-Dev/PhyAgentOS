@@ -91,6 +91,16 @@ def _request(tmp_path: Path) -> dict:
             "validation_ref": "artifact://qualification/validation",
             "validation_sha256": "8" * 64,
         },
+        "collision_world": {
+            "artifact_ref": "artifact://blocks/collision-world",
+            "sha256": "9" * 64,
+            "scene_revision": "blocks_ranking_rgb-0-1",
+            "world_revision": 1,
+            "world_digest": "a" * 64,
+            "coverage": "complete",
+            "target_entity_ref": "entity://red-block",
+            "obstacle_entity_refs": ["entity://green-block", "entity://blue-block"],
+        },
         "candidates": [{
             "candidate_ref": "candidate://red-block/1",
             "entity_ref": "entity://red-block",

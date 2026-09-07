@@ -615,7 +615,7 @@ obstacles:
 excluded_entities: [entity://block-green-1]
 target_entity_ref: entity://block-green-1
 obstacle_count: 2
-cache_capacity: 8
+cache_capacity: 2  # derived from this artifact's obstacle_count, not a global constant
 world_digest: <sha256>
 motion_authorized: false
 ```
@@ -647,3 +647,31 @@ visible Curobo tool. Unknown-space coverage, phase-scoped target exclusion, sync
 updates of both MotionGen instances, and revision/digest invalidation are mandatory. PAOS
 planning remains provider-neutral and motionless; Gateway remains the sole production execution
 authority.
+
+### v6.8.1 cache-capacity implementation update (2026-09-07)
+
+真实 RoboTwin/Curobo no-motion probe 已验证原生 planner 的 collision cache 问题：原始
+`CuroboPlanner` 只用 table 初始化，`MotionGen.collision_cache` 在运行时没有足够的 OBB
+容量，直接 `update_world()` 加入 red/blue 会抛出 Curobo 的 cache overflow，而不是安全地
+忽略障碍物。该失败不能通过换 candidate、调速或放宽碰撞规则解决。
+
+修复位于 `runtime/robotwin_curobo_world_port.py`：provider 先读取两个 arm 的实际 OBB
+capacity；容量满足时更新两个 arm 的 `motion_gen` 和 `motion_gen_batch`；容量不足时，
+按 RoboTwin 已有的 `yml_path`、插值和 seed 配置，用完整 `WorldConfig` 重建并 warmup 两套
+MotionGen，只有两臂替代实例都构造成功后才切换引用。重建失败会保持原 planner 引用，
+返回失败而不是伪造 readiness。该过程不执行 `scene.step()`，不改变 PAOS Core 或 Gateway
+权限。
+
+本次增加的测试覆盖容量分支、双臂替换和 no-motion 行为；真实环境验证使用 RoboTwin20
+Python 3.10、Curobo/SAPIEN，构造 `blocks_ranking_rgb` 场景后更新完整 table+red+blue
+世界，结果为两臂均 `operation=rebuild_motion_gen`、cache 按完整 world 的 3 个 cuboid
+配置，且
+`scene.step`/关节/夹爪命令均为 0。
+
+### 六维验收补充：Anti-OverDefense
+
+除原五维外，新增“防止过度防御编程”维度。仅保留能对应具体失败场景的校验：本次
+`world_digest`/artifact 摘要用于跨进程 collision-world 内容漂移会导致错误规划这一可达
+失败；`scene_revision`/`world_revision` 用于场景改变后继续使用旧障碍世界；cache capacity
+检查用于 Curobo 明确的 OBB overflow。没有新增与该失败无关的冻结 contract、额外 gate 或
+重复 hash。普通类型校验和单元测试仍承担本地结构检查。

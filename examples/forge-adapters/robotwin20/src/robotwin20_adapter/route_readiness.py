@@ -22,7 +22,7 @@ from .perception_profile import (
 )
 from .process_worker import JsonlProcessWorkerClient
 
-ROUTE_REQUEST_SCHEMA_VERSION = "paos-robotwin20-route-request/v6"
+ROUTE_REQUEST_SCHEMA_VERSION = "paos-robotwin20-route-request/v7"
 SIMULATION_ROUTE_READINESS_SCHEMA_VERSION = "paos-robotwin20-simulation-route-readiness/v2"
 ROUTE_READINESS_PROFILE_SCHEMA_VERSION = "paos-robotwin20-route-readiness/v1"
 ROUTE_PHASES = (
@@ -190,7 +190,7 @@ def validate_route_request(request: Mapping[str, Any]) -> None:
         "scene_revision", "frame_id", "calibration_ref", "calibration_sha256",
         "calibration_revision", "candidate_set_ref", "candidates", "workspace_bounds_m",
         "joint_limits_ref", "stop_policy_ref", "motion_capabilities",
-        "controller_qualification",
+        "controller_qualification", "collision_world",
     }
     if not isinstance(request, Mapping) or set(request) != required:
         raise RouteReadinessError("route readiness request fields are invalid")
@@ -209,6 +209,33 @@ def validate_route_request(request: Mapping[str, Any]) -> None:
     _ref(request["calibration_revision"], "calibration_revision")
     _ref(request["joint_limits_ref"], "joint_limits_ref", "artifact://")
     _ref(request["stop_policy_ref"], "stop_policy_ref", "artifact://")
+    collision_world = request["collision_world"]
+    if not isinstance(collision_world, Mapping) or set(collision_world) != {
+        "artifact_ref", "sha256", "scene_revision", "world_revision", "world_digest",
+        "coverage", "target_entity_ref", "obstacle_entity_refs",
+    }:
+        raise RouteReadinessError("route collision world binding fields are invalid")
+    _ref(collision_world["artifact_ref"], "collision world artifact_ref", "artifact://")
+    _sha(collision_world["sha256"], "collision world sha256")
+    _sha(collision_world["world_digest"], "collision world digest")
+    if (
+        collision_world["scene_revision"] != revision
+        or collision_world["coverage"] != "complete"
+        or not isinstance(collision_world["world_revision"], int)
+        or isinstance(collision_world["world_revision"], bool)
+        or collision_world["world_revision"] < 1
+        or not isinstance(collision_world["target_entity_ref"], str)
+        or not collision_world["target_entity_ref"].startswith("entity://")
+    ):
+        raise RouteReadinessError("route collision world binding is stale or incomplete")
+    obstacle_refs = collision_world["obstacle_entity_refs"]
+    if (
+        not isinstance(obstacle_refs, list)
+        or len(obstacle_refs) != len(set(obstacle_refs))
+        or collision_world["target_entity_ref"] in obstacle_refs
+        or any(not isinstance(item, str) or not item.startswith("entity://") for item in obstacle_refs)
+    ):
+        raise RouteReadinessError("route collision world obstacle binding is invalid")
     capabilities = request["motion_capabilities"]
     if not isinstance(capabilities, list) or len(capabilities) != 2:
         raise RouteReadinessError("route motion capabilities must bind both arms")
@@ -276,6 +303,8 @@ def validate_route_request(request: Mapping[str, Any]) -> None:
             raise RouteReadinessError("route candidate identity is duplicated")
         seen.add(candidate_ref)
         _ref(candidate["entity_ref"], "entity_ref", "entity://")
+        if candidate["entity_ref"] != collision_world["target_entity_ref"]:
+            raise RouteReadinessError("route candidate target differs from collision world")
         provenance = candidate["provenance"]
         if not isinstance(provenance, list) or not provenance or any(
             not isinstance(item, str) or not item.startswith("artifact://") for item in provenance

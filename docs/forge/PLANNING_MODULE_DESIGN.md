@@ -222,3 +222,10 @@ next revision and rebinds a fresh collision-world artifact. The adapter must upd
 `motion_gen` and `motion_gen_batch` from the same world digest. Partial/unknown perception
 coverage, missing geometry/provenance, cache-capacity overflow, or update failure remains
 fail-closed and cannot be converted into a ready or motion-authorized result.
+
+The RoboTwin provider handles Curobo's fixed OBB cache explicitly. It uses
+`MotionGen.update_world()` when both arm planners have capacity for the complete world. If
+capacity is insufficient, the runtime port rebuilds warmed `MotionGen` and batch instances from
+the existing RoboTwin robot profile and complete `WorldConfig`, then swaps both arm references
+only after all replacements succeed. This is provider behavior, not planning-module logic; no
+`scene.step()` or motion authorization occurs during rebuild.

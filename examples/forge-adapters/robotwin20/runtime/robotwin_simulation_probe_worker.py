@@ -31,6 +31,7 @@ from robotwin_capability_controller import (
     ControllerCommandError,
     ControllerLimits,
 )
+from robotwin_curobo_world_port import CuroboWorldPortError, apply_collision_world
 from worker_protocol import serve
 
 from robotwin20_adapter.controller_qualification import (
@@ -1092,6 +1093,7 @@ def _run_candidate(
         "sample_count": len(contact_trace),
         "planner_attached_model": attached_model,
         "planner_detached_after_release": detached,
+        "collision_world_update": execution_state.get("collision_world_receipt"),
         "unexpected_robot_environment_contacts": contact_dynamics[
             "unexpected_robot_environment_contacts"
         ],
@@ -1529,6 +1531,21 @@ def _handle_factory(profile: Mapping[str, Any], artifact_root: Path, *, producer
             execution_state["_execution_input_digests"] = policies[
                 "execution_input_digests"
             ]
+            collision_binding = request["collision_world"]
+            collision_path = _artifact_path(artifact_root, collision_binding["artifact_ref"])
+            collision_bytes = collision_path.read_bytes()
+            collision_artifact = json.loads(collision_bytes.decode("utf-8"))
+            if _sha_bytes(collision_bytes) != collision_binding["sha256"]:
+                raise SimulationProbeError("collision world artifact digest mismatch")
+            if collision_artifact.get("world_digest") != collision_binding["world_digest"]:
+                raise SimulationProbeError("collision world digest binding is invalid")
+            try:
+                execution_state["collision_world_receipt"] = apply_collision_world(
+                    {"left": task.robot.left_planner, "right": task.robot.right_planner},
+                    collision_artifact,
+                )
+            except CuroboWorldPortError as exc:
+                raise SimulationProbeError(str(exc)) from exc
             _label_probe_actors(task)
             _validate_runtime_route_input_binding(task, candidate, route_input_artifacts)
             start = time.monotonic()

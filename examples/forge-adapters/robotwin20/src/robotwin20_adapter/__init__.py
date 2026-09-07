@@ -20,6 +20,13 @@ from .adapter import (
     SensorArtifact,
     SensorCapture,
 )
+from .collision_world import (
+    SCENE_COLLISION_WORLD_SCHEMA_VERSION,
+    CollisionWorldError,
+    build_collision_world,
+    collision_world_digest,
+    validate_collision_world,
+)
 from .controller_qualification import (
     CONTROLLER_QUALIFICATION_APPROVAL_SCHEMA_VERSION,
     CONTROLLER_QUALIFICATION_EVIDENCE_SCHEMA_VERSION,
@@ -297,6 +304,11 @@ __all__ = [
     "QualificationTestSpec",
     "canonical_controller_qualification",
     "controller_qualification_digest",
+    "SCENE_COLLISION_WORLD_SCHEMA_VERSION",
+    "CollisionWorldError",
+    "build_collision_world",
+    "collision_world_digest",
+    "validate_collision_world",
     "validate_controller_qualification_plan_package",
     "validate_controller_qualification_result_package",
     "canonical_motion_capability",

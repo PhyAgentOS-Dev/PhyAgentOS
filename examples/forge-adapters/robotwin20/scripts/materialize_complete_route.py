@@ -23,6 +23,7 @@ from robotwin20_adapter.controller_qualification import (
     ControllerQualificationValidation,
     validate_controller_qualification_result_package,
 )
+from robotwin20_adapter.collision_world import build_collision_world
 from robotwin20_adapter.grasp_adaptation import (
     GRASP_ADAPTATION_PROFILE_SCHEMA_VERSION,
     adapt_grasp_candidate,
@@ -385,7 +386,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             "scene-facts", "source-manifest", "grasp-adaptation", "candidate-proposal",
             "object-geometry", "object-t-robot-target", "placement-target", "workspace",
             "joint-limits", "stop-policy", "semantic-tolerance", "route-request",
-            "provider-transform-attestation",
+            "provider-transform-attestation", "collision-world",
         )
     }
     qualification_bindings = {
@@ -486,6 +487,35 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     _write_json(output_root, refs["joint-limits"], profile["joint_limit_policy"])
     _write_json(output_root, refs["stop-policy"], profile["stop_policy"])
     _write_json(output_root, refs["semantic-tolerance"], profile["semantic_tolerance"])
+    collision_geometry_refs = {
+        item["entity_ref"]: f"{prefix}/collision-geometry-{item['actor_name']}"
+        for item in facts["objects"]
+    }
+    for item in facts["objects"]:
+        _write_json(
+            output_root,
+            collision_geometry_refs[item["entity_ref"]],
+            {
+                "schema_version": "paos-robotwin20-object-geometry/v1",
+                "entity_ref": item["entity_ref"],
+                "scene_revision": facts["scene_revision"],
+                "frame_id": item["object_frame_id"],
+                "shape": "box",
+                "half_extents_m": item["half_extents_m"],
+                "source_scene_facts_ref": refs["scene-facts"],
+                "source": "sapien_collision_shape",
+            },
+        )
+    collision_world = build_collision_world(
+        facts,
+        target_entity_ref=args.entity_ref,
+        source_scene_facts_ref=refs["scene-facts"],
+        geometry_refs=collision_geometry_refs,
+        calibration_ref=facts["calibration_ref"],
+    )
+    collision_world_sha256 = _write_json(
+        output_root, refs["collision-world"], collision_world
+    )
     for arm_id, (capability_payload, validation_payload) in capability_payloads.items():
         _write_bytes(
             _artifact_path(output_root, refs[f"{arm_id}-motion-capability"]),
@@ -534,6 +564,18 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "stop_policy_ref": refs["stop-policy"],
         "motion_capabilities": capability_bindings,
         "controller_qualification": qualification_binding,
+        "collision_world": {
+            "artifact_ref": refs["collision-world"],
+            "sha256": collision_world_sha256,
+            "scene_revision": collision_world["scene_revision"],
+            "world_revision": collision_world["world_revision"],
+            "world_digest": collision_world["world_digest"],
+            "coverage": collision_world["coverage"],
+            "target_entity_ref": collision_world["target_entity_ref"],
+            "obstacle_entity_refs": [
+                item["entity_ref"] for item in collision_world["obstacles"]
+            ],
+        },
         "candidates": [],
     }
     adaptation_config = {
@@ -654,6 +696,11 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         },
         "motion_capabilities": capability_bindings,
         "controller_qualification": qualification_binding,
+        "collision_world": {
+            "artifact_ref": refs["collision-world"],
+            "sha256": collision_world_sha256,
+            "world_digest": collision_world["world_digest"],
+        },
         "route_geometry_digest": route_digest,
         "motion_authorized": False,
     }

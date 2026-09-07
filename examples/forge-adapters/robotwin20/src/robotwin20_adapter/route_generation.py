@@ -197,7 +197,7 @@ def generate_route_request(
         "scene_revision", "frame_id", "calibration_ref", "calibration_sha256",
         "calibration_revision", "candidate_set_ref", "candidates", "workspace_bounds_m",
         "joint_limits_ref", "stop_policy_ref", "motion_capabilities",
-        "controller_qualification",
+        "controller_qualification", "collision_world",
     }
     if not isinstance(base_request, Mapping) or set(base_request) != required_base:
         raise RouteGenerationError("route generation base request fields are invalid")

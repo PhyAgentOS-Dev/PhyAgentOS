@@ -1410,7 +1410,7 @@ digest 为 `0c70ba501db1a0e2962a5dff3e839fc58b8b1c0dbe0f6cf05d255ad8baee1b8`，�
 | 架构集成 | 通过（无 Blocker/Major） | `SceneCollisionWorldBuilder`、Curobo world port 和 world-update receipt 留在 RoboTwin adapter/provider；PAOS planning 只校验抽象 artifact/readiness，不导入 Curobo、不执行 `scene.step`。 |
 | 失败路径 | 通过（实现前置条件） | 缺失/过期/篡改 scene facts、未知空间、frame/calibration 不一致、目标重复注册、cache capacity 不足、任一 `update_world` 失败、world revision 漂移、unknown result 均 fail-closed；左右两套 `MotionGen` 必须一致更新。 |
 | 权威边界 | 通过（无越权） | collision-world 是 provider projection；planner 结果只是 readiness evidence；SAPIEN contact/after-semantic 是独立执行事实；Gateway 仍是唯一生产动作 authority；任何 artifact 都保持 `motion_authorized=false`。 |
-| 配置与 provenance | 通过（需冻结） | 绑定 `scene_revision`、`world_revision`、source facts/geometry/calibration digest、planner/runtime identity、obstacle 集合、excluded target、frame/quaternion convention 和 cache capacity；不得把方块坐标或 Curobo API 写入 PAOS Core/Skill。 |
+| 配置与 provenance | 通过（需冻结） | 绑定 `scene_revision`、`world_revision`、source facts/geometry/calibration digest、planner/runtime identity、obstacle 集合、excluded target 和 frame/quaternion convention；cache capacity 由 obstacle 数量和 provider base world 推导，不使用全局常量。不得把方块坐标或 Curobo API 写入 PAOS Core/Skill。 |
 | 可维护性 | 通过（模块边界清晰） | 纯 builder 不导入 Curobo；provider port 负责 `WorldConfig`/双 `MotionGen`；route-readiness 负责引用/digest；probe 负责接触和恢复；planning 负责通用 admission；每层均有可重复的 no-motion 测试。 |
 
 复核结论：**诊断方向正确，修订后的方案无 Blocker/Major；但功能尚未实现。** candidate-0
@@ -1429,3 +1429,32 @@ AgentTaskCoordinator rather than performed by the planning library. All five dim
 without a blocker, but this is a design gate—not implementation or motion evidence. Both
 `motion_gen` and `motion_gen_batch` must receive the same provider-owned world projection, and
 every world/revision/digest drift must invalidate readiness.
+
+## 32.25 v6.8.1 provider cache-capacity 修复与六维验收（2026-09-07）
+
+独立 RoboTwin20/Curobo no-motion probe 证明：原生 planner 的初始 world 只有 table，
+`MotionGen.update_world()` 添加两个 block 时因 OBB cache 不足抛出
+`number of OBB is larger than collision cache`。这是 provider 初始化容量问题，不是
+candidate、TCP、速度或 PAOS planning 顺序问题。
+
+`robotwin_curobo_world_port.apply_collision_world()` 现在先读取左右
+`motion_gen`/`motion_gen_batch` 的实际 capacity；容量足够时将同一 `WorldConfig` 更新到
+四个实例；容量不足时沿用 RoboTwin planner 的 robot YAML、原生插值/seed 设置和完整
+world 重建并 warmup 两套 MotionGen，只有两臂替代实例全部成功才切换引用。任一失败保持
+旧引用并返回错误。该路径仅在 provider runtime，不执行 `scene.step()`，不改变 Gateway、
+Action、Dora 或 motion authority。真实 no-motion 结果为两臂
+`operation=rebuild_motion_gen`、capacity 覆盖完整 world 的 3 个 cuboid、控制步数 0。
+
+### 六维验收
+
+| 维度 | 结果 | 证据 |
+|---|---|---|
+| 架构集成 | 通过 | builder 为纯 adapter；Curobo 仅在 runtime port；planning 不执行 provider。 |
+| 失败路径 | 通过 | overflow、缺配置、任一 arm 更新/重建失败均 fail-closed，且不半切换。 |
+| 权威边界 | 通过 | provider receipt 只是 readiness 输入；Gateway 仍是生产执行权威。 |
+| 配置与 provenance | 通过 | route v7 绑定 scene/world revision、world digest、coverage、target/obstacle 集合。 |
+| 可维护性 | 通过 | 容量分支集中于一个 provider port；单元测试与真实 no-motion probe 可复现。 |
+| 防止过度防御编程 | 通过 | 仅保留与实际 cache overflow、artifact drift、scene/world stale 直接对应的检查，未新增无依据 gate/hash。 |
+
+该结论仅表示 collision-world provider 接入和 no-motion world update 完成，不等于真实
+抓取放置、接触动力学、完整 transport/release/retreat 或 Gateway 动作验收。

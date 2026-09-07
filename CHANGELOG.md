@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.1] - 2026-09-07
+
+Integrated the provider-owned RoboTwin/Curobo collision world and fixed the concrete OBB cache-capacity failure. The runtime now updates both arms when capacity is available or rebuilds warmed MotionGen instances from the existing RoboTwin profile when it is not; the swap is no-motion and fail-closed. Collision-world capacity is derived from obstacle count rather than a fixed constant.
+
+接入 provider-owned RoboTwin/Curobo 碰撞世界并修复已复现的 OBB cache 容量问题。runtime 在容量足够时更新双臂，容量不足时按现有 RoboTwin profile 重建并 warmup MotionGen，切换过程无动作且 fail-closed；碰撞世界容量由障碍数量推导，不再使用固定常量。
+
+Files: `examples/forge-adapters/robotwin20/src/robotwin20_adapter/collision_world.py`, `examples/forge-adapters/robotwin20/runtime/robotwin_curobo_world_port.py`, `examples/forge-adapters/robotwin20/runtime/robotwin_simulation_probe_worker.py`, route v7 files, and collision-world tests.
+
+Validation: full module suite `759 passed, 1 skipped`; real RoboTwin20/Curobo no-motion probe loaded table+red+blue for dual Franka and rebuilt both arms with capacity 3; Ruff, compileall, and `git diff --check` passed. Six-dimension review passed, including Anti-OverDefense. No Gateway, Dora, Action, hardware, or benchmark motion was run.
+
 ## [v6.7.4] - 2026-09-07
 
 Reviewed the diagnosis that observed entities were missing from the RoboTwin/Curobo planning world. Five-dimension review found no blocker after clarifying unknown-space coverage, phase-scoped target exclusion, synchronized dual-MotionGen updates, and Coordinator-owned replanning. Recorded the provider-owned `SceneCollisionWorld` contract and fail-closed gates; no runtime motion or execution surface was changed.

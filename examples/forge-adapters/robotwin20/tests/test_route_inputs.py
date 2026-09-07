@@ -48,6 +48,7 @@ def _facts():
         "captured_at": "2026-09-05T00:00:00+00:00",
         "robot_control_steps": 0,
         "motion_authorized": False,
+        "coverage": "complete",
         "objects": objects,
     }
 

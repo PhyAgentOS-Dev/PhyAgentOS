@@ -136,7 +136,7 @@ def validate_scene_facts(value: Any) -> dict[str, Any]:
     required = {
         "schema_version", "task_name", "seed", "scene_revision", "observation_ref",
         "observation_frame_id", "route_frame_id", "calibration_ref", "task_definition",
-        "captured_at", "robot_control_steps", "motion_authorized", "objects",
+        "captured_at", "robot_control_steps", "motion_authorized", "coverage", "objects",
     }
     if not isinstance(value, Mapping) or set(value) != required:
         raise RouteInputError("route scene facts fields are invalid")
@@ -144,6 +144,8 @@ def validate_scene_facts(value: Any) -> dict[str, Any]:
         raise RouteInputError("route scene facts schema is unsupported")
     if value["route_frame_id"] != "world" or value["motion_authorized"] is not False or value["robot_control_steps"] != 0:
         raise RouteInputError("route scene facts motion/frame boundary is invalid")
+    if value["coverage"] not in {"complete", "partial", "unknown"}:
+        raise RouteInputError("route scene facts coverage is invalid")
     revision = value["scene_revision"]
     frame = value["observation_frame_id"]
     if value["observation_ref"] != f"observation://{revision}/{frame}":
