@@ -43,6 +43,13 @@ from robotwin20_adapter.controller_qualification import (
     controller_qualification_digest,
     validate_controller_qualification_result_package,
 )
+from robotwin20_adapter.dual_arm_state import (
+    DualArmStateError,
+    build_dual_arm_state,
+    build_peer_arm_projection,
+    hold_drift,
+    validate_dual_arm_state,
+)
 from robotwin20_adapter.motion_capabilities import (
     MotionCapabilityDocument,
     MotionCapabilityValidation,
@@ -189,6 +196,91 @@ def _orientation_error_rad(before: list[float], after: list[float]) -> float:
     rotation = t3d.quaternions.quat2mat(left) @ t3d.quaternions.quat2mat(right).T
     cosine = max(-1.0, min(1.0, (float(np.trace(rotation)) - 1.0) / 2.0))
     return float(math.acos(cosine))
+
+
+def _capture_dual_arm_state(task: Any, scene_revision: str) -> dict[str, Any]:
+    """Capture the stabilized provider state used by sequential route planning."""
+    import numpy as np
+
+    def arm_payload(entity: Any, gripper: Any) -> dict[str, Any]:
+        qpos = [float(item) for item in entity.get_qpos()[:7]]
+        joints = list(entity.get_active_joints())[:7]
+        targets: list[float] = []
+        for joint in joints:
+            value = joint.get_drive_target()
+            value = value[0] if isinstance(value, (list, tuple, np.ndarray)) else value
+            targets.append(float(value))
+        links: list[dict[str, Any]] = []
+        for link in entity.get_links():
+            pose = link.get_pose()
+            links.append({
+                "link_id": f"placeholder:{link.get_name()}",
+                "link_name": str(link.get_name()),
+                "pose_wxyz": [*map(float, pose.p), *map(float, pose.q)],
+            })
+        # build_dual_arm_state assigns the arm-qualified identity; remove the
+        # temporary value only after preserving the provider link name.
+        return {"qpos": qpos, "drive_target": targets, "gripper": float(gripper), "links": links}
+
+    left = arm_payload(task.robot.left_entity, task.robot.get_left_gripper_val())
+    right = arm_payload(task.robot.right_entity, task.robot.get_right_gripper_val())
+    left["links"] = [{**item, "link_id": f"left:{item['link_name']}"} for item in left["links"]]
+    right["links"] = [{**item, "link_id": f"right:{item['link_name']}"} for item in right["links"]]
+    return build_dual_arm_state(
+        scene_revision=scene_revision,
+        state_revision=f"{scene_revision}:stabilized",
+        frame_id="world",
+        left=left,
+        right=right,
+        held_arm_policy="hold",
+        provenance_refs=[f"artifact://simulation-probe/{scene_revision}/dual-arm-state"],
+    )
+
+
+def _capture_peer_projection(task: Any, state: Mapping[str, Any], selected_arm: str) -> dict[str, Any]:
+    """Project the held arm's live collision boxes for the selected planner."""
+    import numpy as np
+
+    peer_arm = "right" if selected_arm == "left" else "left"
+    entity = task.robot.right_entity if peer_arm == "right" else task.robot.left_entity
+    links: list[dict[str, Any]] = []
+    for link in entity.get_links():
+        shapes = []
+        getter = getattr(link, "get_collision_shapes", None)
+        if callable(getter):
+            shapes = list(getter())
+        if not shapes:
+            for component in getattr(link, "components", []):
+                getter = getattr(component, "get_collision_shapes", None)
+                if callable(getter):
+                    shapes.extend(getter())
+        if len(shapes) != 1 or not callable(getattr(shapes[0], "get_half_size", None)):
+            raise SimulationProbeError("peer arm collision geometry is unavailable")
+        extents = [float(item) for item in shapes[0].get_half_size()]
+        local_pose = getattr(shapes[0], "get_local_pose", lambda: None)()
+        if local_pose is not None and hasattr(local_pose, "to_transformation_matrix"):
+            matrix = local_pose.to_transformation_matrix()
+            identity = np.eye(4)
+            if not np.allclose(np.asarray(matrix), identity, atol=1e-6):
+                raise SimulationProbeError("peer arm collision shape pose is unsupported")
+        pose = link.get_pose()
+        links.append({
+            "arm_id": peer_arm,
+            "link_name": str(link.get_name()),
+            "half_extents_m": extents,
+            "pose_wxyz": [*map(float, pose.p), *map(float, pose.q)],
+        })
+    try:
+        return build_peer_arm_projection(
+            scene_revision=state["scene_revision"],
+            state_revision=state["state_revision"],
+            frame_id=state["frame_id"],
+            selected_arm=selected_arm,
+            links=links,
+            source_ref=state["provenance_refs"][0],
+        )
+    except DualArmStateError as exc:
+        raise SimulationProbeError("peer arm projection is invalid") from exc
 
 
 def _validate_approval(
@@ -338,10 +430,48 @@ def _contact_state(
     step: int,
     attached: bool = False,
 ) -> list[dict[str, Any]]:
+    link_identity: dict[int, str] = {}
+    by_name: dict[str, list[str]] = {}
+    entities = []
+    for arm_id in ("left", "right"):
+        entity = getattr(task.robot, f"{arm_id}_entity", None)
+        if entity is not None and callable(getattr(entity, "get_links", None)):
+            entities.append((arm_id, entity))
+    for arm_id, entity in entities:
+        for link in entity.get_links():
+            qualified = f"{arm_id}:{link.get_name()}"
+            link_identity[id(link)] = qualified
+            for attribute in ("entity", "component"):
+                owner = getattr(link, attribute, None)
+                if owner is not None:
+                    link_identity[id(owner)] = qualified
+            getter = getattr(link, "get_entity", None)
+            if callable(getter):
+                owner = getter()
+                if owner is not None:
+                    link_identity[id(owner)] = qualified
+            by_name.setdefault(str(link.get_name()), []).append(qualified)
+
+    def body_name(body: Any) -> str:
+        for candidate in (body, getattr(body, "entity", None)):
+            if candidate is None:
+                continue
+            qualified = link_identity.get(id(candidate))
+            if qualified is not None:
+                return qualified
+        raw_entity = getattr(body, "entity", None)
+        raw = str(getattr(raw_entity, "name", getattr(body, "name", "")))
+        candidates = by_name.get(raw, [])
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            return f"ambiguous:{raw}"
+        return raw
+
     records: list[dict[str, Any]] = []
     for contact in task.scene.get_contacts():
-        left = str(contact.bodies[0].entity.name)
-        right = str(contact.bodies[1].entity.name)
+        left = body_name(contact.bodies[0])
+        right = body_name(contact.bodies[1])
         impulses: list[float] = []
         for point in contact.points:
             try:
@@ -357,6 +487,10 @@ def _contact_state(
                 "phase": phase,
                 "step": step,
                 "pair": sorted((left, right)),
+                "body_roles": [
+                    "robot_link" if ":" in left and not left.startswith("ambiguous:") else left,
+                    "robot_link" if ":" in right and not right.startswith("ambiguous:") else right,
+                ],
                 "point_count": len(impulses),
                 "max_impulse_ns": max_impulse,
                 "active_contact": max_impulse > 1e-6,
@@ -366,7 +500,12 @@ def _contact_state(
     return records
 
 
-def _snapshot(task: Any, request: Mapping[str, Any], candidate: Mapping[str, Any]) -> dict[str, Any]:
+def _snapshot(
+    task: Any,
+    request: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    dual_arm_state: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     actors: dict[str, Any] = {}
     for actor in task.scene.get_all_actors():
         pose = actor.get_pose()
@@ -383,7 +522,7 @@ def _snapshot(task: Any, request: Mapping[str, Any], candidate: Mapping[str, Any
     encoded = json.dumps(state, sort_keys=True, separators=(",", ":")).encode("utf-8")
     target = _actor_for_entity(task, candidate["entity_ref"])
     target_pose = target.get_pose()
-    return {
+    snapshot = {
         **{key: request[key] for key in _STATE_FIELDS},
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "state_digest": _sha_bytes(encoded),
@@ -398,6 +537,9 @@ def _snapshot(task: Any, request: Mapping[str, Any], candidate: Mapping[str, Any
             "right": float(robot.get_right_gripper_val()),
         },
     }
+    if dual_arm_state is not None:
+        snapshot["dual_arm_state"] = dict(dual_arm_state)
+    return snapshot
 
 
 def _actor_for_entity(task: Any, entity_ref: str) -> Any:
@@ -711,6 +853,7 @@ def _guard_execution_inputs(root: Path, bindings: Mapping[str, str]) -> None:
 def _step_bounded_controller(
     task: Any,
     controller: CapabilityBoundedDriveController,
+    execution_state: dict[str, Any],
 ) -> None:
     controller.before_step()
     try:
@@ -719,6 +862,17 @@ def _step_bounded_controller(
         controller.dropped_step()
         raise
     controller.after_step()
+    held_arm = execution_state.get("held_arm")
+    initial = execution_state.get("dual_arm_state")
+    if held_arm and isinstance(initial, Mapping):
+        try:
+            current = _capture_dual_arm_state(task, initial["scene_revision"])
+            drift = hold_drift(initial, current, arm_id=held_arm)
+        except (DualArmStateError, KeyError) as exc:
+            raise SimulationProbeError("held arm state could not be measured") from exc
+        execution_state["held_arm_drift"] = drift
+        if not drift["drive_target_unchanged"]:
+            raise SimulationProbeError("held arm drive target drifted")
 
 
 def _validate_world_pose(
@@ -747,8 +901,17 @@ def _robot_link_names(task: Any) -> set[str]:
 
 def _evaluate_contacts(task: Any, actor: Any, trace: list[dict[str, Any]]) -> dict[str, Any]:
     target = str(actor.get_name())
-    grippers = {str(name) for name in task.robot.gripper_name}
-    robot_links = _robot_link_names(task)
+    grippers = {
+        f"{arm}:{name}"
+        for arm, entity in (("left", task.robot.left_entity), ("right", task.robot.right_entity))
+        for name in task.robot.gripper_name
+        if any(str(link.get_name()) == str(name) for link in entity.get_links())
+    }
+    robot_links = {
+        f"{arm}:{link_name}"
+        for arm, entity in (("left", task.robot.left_entity), ("right", task.robot.right_entity))
+        for link_name in (str(link.get_name()) for link in entity.get_links())
+    }
     unexpected: list[dict[str, Any]] = []
     target_gripper_phases: set[str] = set()
     target_support_phases: set[str] = set()
@@ -871,7 +1034,7 @@ def _execute_segment(
         controller.command(positions[index], velocities[index])
         execution_state["world_change_started"] = True
         execution_state["phase"] = phase
-        _step_bounded_controller(task, controller)
+        _step_bounded_controller(task, controller, execution_state)
         execution_state["simulator_steps"] += 1
         current_position = np.asarray(ee()[:3], dtype=np.float64)
         displacement = current_position - previous_position
@@ -927,7 +1090,7 @@ def _set_gripper(
         task.robot.set_gripper(normalized_value, arm)
         execution_state["world_change_started"] = True
         execution_state["phase"] = phase
-        _step_bounded_controller(task, controller)
+        _step_bounded_controller(task, controller, execution_state)
         execution_state["simulator_steps"] += 1
         contacts.extend(
             _contact_state(
@@ -979,6 +1142,7 @@ def _run_candidate(
     if not arm_results:
         raise SimulationProbeError("no arm can plan candidate route")
     arm = next(iter(arm_results))
+    execution_state["held_arm"] = "right" if arm == "left" else "left"
     planner = task.robot.left_planner if arm == "left" else task.robot.right_planner
     execution_state["_planner"] = planner
     limits = _joint_limits(planner)
@@ -1072,6 +1236,9 @@ def _run_candidate(
         "scene_revision": request["scene_revision"],
         "arm": arm,
         "arm_selection_attempts": arm_attempts,
+        "held_arm": execution_state.get("held_arm"),
+        "held_arm_policy": execution_state.get("dual_arm_state", {}).get("held_arm_policy"),
+        "held_arm_drift": execution_state.get("held_arm_drift"),
         "phases": route_records,
         "contact_samples": len(contact_trace),
     }
@@ -1094,6 +1261,7 @@ def _run_candidate(
         "planner_attached_model": attached_model,
         "planner_detached_after_release": detached,
         "collision_world_update": execution_state.get("collision_world_receipt"),
+        "peer_arm_projection": execution_state.get("peer_arm_projection"),
         "unexpected_robot_environment_contacts": contact_dynamics[
             "unexpected_robot_environment_contacts"
         ],
@@ -1153,7 +1321,8 @@ def _recover_candidate_failure(
     reset_status = "not_required"
     if execution_state["world_change_started"]:
         try:
-            after_failure = _snapshot(task, request, candidate)
+            after_state = _capture_dual_arm_state(task, request["scene_revision"])
+            after_failure = _snapshot(task, request, candidate, after_state)
             after_failure_ref = _json_artifact(
                 artifact_root, prefix + "/after-failure-snapshot", after_failure
             )
@@ -1236,7 +1405,8 @@ def _finalize_candidate_success(
 
     execution_state["phase"] = "finalizing"
     execution_state.pop("_planner", None)
-    after = _snapshot(task, request, candidate)
+    after_state = _capture_dual_arm_state(task, request["scene_revision"])
+    after = _snapshot(task, request, candidate, after_state)
     if before["state_digest"] == after["state_digest"]:
         raise SimulationProbeError("simulation probe before/after state did not change")
     trajectory_ref = _json_artifact(artifact_root, prefix + "/trajectory", trajectory)
@@ -1519,6 +1689,15 @@ def _handle_factory(profile: Mapping[str, Any], artifact_root: Path, *, producer
                 raise SimulationProbeError("RoboTwin simulation task is unavailable")
             if backend.snapshot().get("scene_revision") != request["scene_revision"]:
                 raise SimulationProbeError("simulation backend revision binding is invalid")
+            planning_state = _capture_dual_arm_state(task, request["scene_revision"])
+            validate_dual_arm_state(planning_state)
+            execution_state["dual_arm_state"] = planning_state
+            execution_state["held_arm"] = "left"
+            # Curobo exposes two independent single-arm planners in RoboTwin.
+            # Label them before adding the opposite arm as a static obstacle so
+            # a projection can never be silently applied to the wrong planner.
+            task.robot.left_planner.arm_id = "left"
+            task.robot.right_planner.arm_id = "right"
             execution_state["_controllers"] = _build_route_controllers(
                 task, policies["motion_capability_documents"]
             )
@@ -1540,16 +1719,22 @@ def _handle_factory(profile: Mapping[str, Any], artifact_root: Path, *, producer
             if collision_artifact.get("world_digest") != collision_binding["world_digest"]:
                 raise SimulationProbeError("collision world digest binding is invalid")
             try:
+                peer_projections = {
+                    arm_id: _capture_peer_projection(task, planning_state, arm_id)
+                    for arm_id in ("left", "right")
+                }
+                execution_state["peer_arm_projection"] = peer_projections
                 execution_state["collision_world_receipt"] = apply_collision_world(
                     {"left": task.robot.left_planner, "right": task.robot.right_planner},
                     collision_artifact,
+                    peer_projections=peer_projections,
                 )
             except CuroboWorldPortError as exc:
                 raise SimulationProbeError(str(exc)) from exc
             _label_probe_actors(task)
             _validate_runtime_route_input_binding(task, candidate, route_input_artifacts)
             start = time.monotonic()
-            before = _snapshot(task, request, candidate)
+            before = _snapshot(task, request, candidate, planning_state)
             deadline = start + max_duration_s
             # Persist the immutable pre-route state before any simulator step so a
             # failure can always be reconciled against the exact starting scene.

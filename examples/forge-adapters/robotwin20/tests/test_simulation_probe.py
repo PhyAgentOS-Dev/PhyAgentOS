@@ -1302,3 +1302,50 @@ def test_client_rejects_reconciliation_without_world_change(tmp_path: Path):
     )
     with pytest.raises(SimulationProbeProfileError, match="reconciliation"):
         client.probe(request, candidate_ref=request["candidates"][0]["candidate_ref"])
+
+
+def test_contact_trace_qualifies_duplicate_arm_link_names():
+    class Link:
+        def __init__(self, name):
+            self._name = name
+
+        def get_name(self):
+            return self._name
+
+    class Entity:
+        def __init__(self):
+            self.link = Link("panda_leftfinger")
+
+        def get_links(self):
+            return [self.link]
+
+    class Body:
+        def __init__(self, entity):
+            self.entity = entity
+
+    class Point:
+        impulse = [0.0, 0.0, 0.02]
+
+    class Contact:
+        def __init__(self, left, right):
+            self.bodies = [Body(left), Body(right)]
+            self.points = [Point()]
+
+    class Scene:
+        def __init__(self, robot):
+            self.robot = robot
+
+        def get_contacts(self):
+            return [Contact(self.robot.left_entity.link, type("Table", (), {"name": "table"})())]
+
+    class Robot:
+        left_entity = Entity()
+        right_entity = Entity()
+
+    class Task:
+        robot = Robot()
+        scene = Scene(robot)
+
+    trace = probe_worker._contact_state(Task(), phase="approach", step=1)
+    assert trace[0]["pair"] == ["left:panda_leftfinger", "table"]
+    assert trace[0]["active_contact"] is True

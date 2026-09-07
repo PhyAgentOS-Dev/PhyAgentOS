@@ -39,7 +39,8 @@ class FakeMotionGen:
 
 
 class FakePlanner:
-    def __init__(self, capacity=8):
+    def __init__(self, capacity=8, arm_id=None):
+        self.arm_id = arm_id
         self.robot_origion_pose = SimpleNamespace(p=[0, 0, 0], q=[1, 0, 0, 0])
         self.motion_gen = FakeMotionGen(capacity=capacity)
         self.motion_gen_batch = FakeMotionGen(capacity=capacity)
@@ -153,3 +154,37 @@ def test_rebuild_failure_keeps_original_both_arm_references(monkeypatch):
     assert len(calls) == 2
     for side, planner in planners.items():
         assert (planner.motion_gen, planner.motion_gen_batch) == original[side]
+
+
+def test_port_projects_peer_arm_geometry_into_each_selected_arm_world():
+    planners = {"left": FakePlanner(arm_id="left"), "right": FakePlanner(arm_id="right")}
+    peer = {
+        arm: {
+            "schema_version": "paos-robotwin20-peer-arm-projection/v1",
+            "scene_revision": _artifact()["scene_revision"],
+            "state_revision": "scene:stabilized",
+            "frame_id": "world",
+            "selected_arm": arm,
+            "obstacles": [{
+                "entity_ref": "arm://" + ("right" if arm == "left" else "left") + ":panda_hand",
+                "link_id": ("right" if arm == "left" else "left") + ":panda_hand",
+                "shape": "cuboid", "half_extents_m": [0.1, 0.1, 0.1],
+                "pose_wxyz": [0, 0, 0, 1, 0, 0, 0],
+                "provenance_ref": "artifact://scene/state",
+            }],
+            "source_ref": "artifact://scene/state",
+            "motion_authorized": False,
+        }
+        for arm in ("left", "right")
+    }
+    receipt = apply_collision_world(planners, _artifact(), peer_projections=peer)
+    assert receipt["motion_authorized"] is False
+    for planner in planners.values():
+        assert len(planner.motion_gen.world_model.objects) == 4
+        assert any(item.name.startswith("peer-") for item in planner.motion_gen.world_model.objects)
+
+
+def test_port_rejects_missing_peer_projection_for_labeled_planner():
+    planners = {"left": FakePlanner(arm_id="left"), "right": FakePlanner(arm_id="right")}
+    with pytest.raises(CuroboWorldPortError, match="peer arm projection is invalid"):
+        apply_collision_world(planners, _artifact(), peer_projections={"left": {}})

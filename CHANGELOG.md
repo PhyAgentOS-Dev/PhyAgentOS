@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.6] - 2026-09-07
+
+Implemented provider-owned dual-arm planning state, qualified arm/link contact identity, held-arm drift checks, and peer-arm static collision projection for sequential RoboTwin planning. Curobo remains behind the adapter port; synchronized atomic dual-arm execution is still not claimed.
+
+实现 provider-owned 双臂规划状态、qualified arm/link 接触归因、未选中臂漂移检查和顺序 RoboTwin 规划的另一臂静态碰撞投影。Curobo 仍封装在 adapter port 后；本轮不宣称同步原子双臂执行。
+
+Files: `examples/forge-adapters/robotwin20/src/robotwin20_adapter/dual_arm_state.py:L1-L200`, `examples/forge-adapters/robotwin20/runtime/robotwin_curobo_world_port.py:L82-L238`, `examples/forge-adapters/robotwin20/runtime/robotwin_simulation_probe_worker.py:L426-L500,L853-L910,L1692-L1740`.
+
+Validation: RoboTwin adapter `289 passed, 1 skipped`; focused dual-arm/route/probe `40 passed`; Ruff, compileall, and `git diff --check` passed. New simulation motion was not run; prior approval is invalid after worker changes.
+
 ## [v6.8.5] - 2026-09-07
 
 Clarified that true dual-arm planning is not the concatenation of two independent Curobo plans. The design now distinguishes static other-arm projection, sequential bimanual execution, and synchronized atomic bimanual execution, with geometry, trajectory, and execution-layer collision checks. The current RoboTwin path remains limited to sequential execution with explicit hold/park semantics.

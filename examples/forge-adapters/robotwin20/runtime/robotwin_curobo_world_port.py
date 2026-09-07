@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from robotwin20_adapter.collision_world import validate_collision_world
+from robotwin20_adapter.dual_arm_state import validate_peer_arm_projection
 
 
 class CuroboWorldPortError(RuntimeError):
@@ -78,7 +79,22 @@ def _world_pose_for_planner(planner: Any, pose: Mapping[str, Any]) -> list[float
     return [*map(float, position), *map(float, rotation)]
 
 
-def _world_config(planner: Any, artifact: Mapping[str, Any]) -> Any:
+def _peer_pose_for_planner(planner: Any, peer: Mapping[str, Any]) -> list[float]:
+    pose = peer["pose_wxyz"]
+    return _world_pose_for_planner(
+        planner,
+        {
+            "position_m": pose[:3],
+            "orientation_xyzw": [pose[4], pose[5], pose[6], pose[3]],
+        },
+    )
+
+
+def _world_config(
+    planner: Any,
+    artifact: Mapping[str, Any],
+    peer_projection: Mapping[str, Any] | None = None,
+) -> Any:
     from curobo.geom.types import Cuboid, WorldConfig
 
     base_world = getattr(planner, "_paos_collision_base_world", None)
@@ -98,11 +114,33 @@ def _world_config(planner: Any, artifact: Mapping[str, Any]) -> Any:
                 pose=_world_pose_for_planner(planner, obstacle["world_T_entity"]),
             )
         )
+    if peer_projection is not None:
+        try:
+            validated_peer = validate_peer_arm_projection(peer_projection)
+        except ValueError as exc:
+            raise CuroboWorldPortError("peer arm projection is invalid") from exc
+        peer_arm = validated_peer["selected_arm"]
+        planner_arm = getattr(planner, "arm_id", None)
+        if planner_arm in {"left", "right"} and planner_arm != peer_arm:
+            raise CuroboWorldPortError("peer arm projection is bound to the wrong planner")
+        names = {item.name for item in cuboids}
+        for peer in validated_peer["obstacles"]:
+            name = f"peer-{peer['link_id'].replace(':', '-') }"
+            if name in names:
+                raise CuroboWorldPortError(f"peer arm obstacle duplicates planner object: {name}")
+            cuboids.append(
+                Cuboid(
+                    name=name,
+                    dims=[2.0 * float(value) for value in peer["half_extents_m"]],
+                    pose=_peer_pose_for_planner(planner, peer),
+                )
+            )
     return WorldConfig(cuboid=cuboids)
 
 
 def apply_collision_world(
-    planners: Mapping[str, Any] | Sequence[Any], artifact: Mapping[str, Any]
+    planners: Mapping[str, Any] | Sequence[Any], artifact: Mapping[str, Any],
+    *, peer_projections: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Apply one artifact to both arm planners and their batch planners.
 
@@ -122,11 +160,19 @@ def apply_collision_world(
         raise CuroboWorldPortError("collision world artifact is invalid") from exc
     prepared = []
     for planner in selected:
+        planner_arm = getattr(planner, "arm_id", None)
+        peer_projection = None
+        if peer_projections is not None:
+            if planner_arm not in {"left", "right"}:
+                raise CuroboWorldPortError("planner arm identity is required for peer projection")
+            peer_projection = peer_projections.get(planner_arm)
+            if peer_projection is None:
+                raise CuroboWorldPortError("peer projection coverage is incomplete")
         motion_gen = getattr(planner, "motion_gen", None)
         batch = getattr(planner, "motion_gen_batch", None)
         if motion_gen is None or batch is None or not callable(getattr(motion_gen, "update_world", None)) or not callable(getattr(batch, "update_world", None)):
             raise CuroboWorldPortError("planner does not expose motion_gen and motion_gen_batch update_world")
-        world = _world_config(planner, world_artifact)
+        world = _world_config(planner, world_artifact, peer_projection)
         required_capacity = len(world.cuboid)
         prepared.append(
             (

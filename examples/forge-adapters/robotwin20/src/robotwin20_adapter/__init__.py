@@ -54,6 +54,17 @@ from .controller_qualification import (
     validate_controller_qualification_plan_package,
     validate_controller_qualification_result_package,
 )
+from .dual_arm_state import (
+    DUAL_ARM_STATE_SCHEMA_VERSION,
+    PEER_ARM_PROJECTION_SCHEMA_VERSION,
+    DualArmStateError,
+    build_dual_arm_state,
+    build_peer_arm_projection,
+    hold_drift,
+    qualified_link_id,
+    validate_dual_arm_state,
+    validate_peer_arm_projection,
+)
 from .grasp_adaptation import (
     GRASP_ADAPTATION_PROFILE_SCHEMA_VERSION,
     GraspAdaptationError,
@@ -309,6 +320,15 @@ __all__ = [
     "build_collision_world",
     "collision_world_digest",
     "validate_collision_world",
+    "DUAL_ARM_STATE_SCHEMA_VERSION",
+    "PEER_ARM_PROJECTION_SCHEMA_VERSION",
+    "DualArmStateError",
+    "build_dual_arm_state",
+    "build_peer_arm_projection",
+    "hold_drift",
+    "qualified_link_id",
+    "validate_dual_arm_state",
+    "validate_peer_arm_projection",
     "validate_controller_qualification_plan_package",
     "validate_controller_qualification_result_package",
     "canonical_motion_capability",

@@ -405,3 +405,14 @@ Agent
 ```
 
 这里的关键是：Agent 进化的是“何时选择哪种合法规划模式、候选、臂分配和重规划策略”，而不是直接进化 Curobo 参数或绕过 Gateway。PAOS 只新增稳定的 provider port/projection seam，不新增第二个 scheduler、planner runtime 或状态数据库。
+
+## 11. v6.8.6 实现落点与当前边界
+
+本轮已将近期目标落到 RoboTwin provider 侧，未改变 PAOS Core 的任务生命周期或 Gateway 执行协议：
+
+- `robotwin20_adapter.dual_arm_state` 提供不可执行的 `DualArmPlanningState` 与 peer-arm projection 纯模型。它绑定 scene/state revision、world frame、左右 qpos/drive target、夹爪状态和 `left:<link>` / `right:<link>` qualified identity，并提供 hold drift 测量；`motion_authorized` 固定为 `false`。
+- `robotwin_curobo_world_port.apply_collision_world` 接收每个选中臂对应的 peer projection，将另一臂碰撞盒转换到该 planner 的 base frame，再复用 Curobo `WorldConfig`/`update_world` 或容量不足时的现有 MotionGen rebuild。该 port 不执行 `scene.step()`，不向 Agent 暴露 Curobo Tool。
+- simulation probe 在 reset 后捕获双臂状态；每个 simulator step 检查 held arm 的 drive target 是否漂移；contact trace 对重复的 RoboTwin link 名称使用 qualified arm identity，无法唯一归因时保留 `ambiguous:*`，并继续 fail-closed。
+- 选中臂仍按现有 provider route 执行，另一臂当前采用 `hold` 语义；尚未实现 park route、combined-robot synchronized trajectory、inter-arm swept-volume 动态证明或 Gateway atomic bundle。
+
+因此本轮完成的是“顺序双臂的状态绑定 + peer-arm 静态碰撞投影 + 接触归因基础”，不是完整双臂动作成功证明。要进入新的 simulation-only probe，必须重新生成包含双臂状态/peer projection 的 route package 并取得与新 worker 源码绑定的人工批准；既有 approval 不能复用。
