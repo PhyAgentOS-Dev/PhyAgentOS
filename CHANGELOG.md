@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.2] - 2026-09-07
+
+Materialized and independently validated a fresh route-request/v7 package for the provider collision-world probe. The package binds a complete table+red+blue world, real GraspGen candidate-0, dual-Franka capabilities, and q4 qualification; it remains pending exact human simulation-only approval and no simulation step was run.
+
+为 provider collision-world probe 物化并独立校验了新的 route-request/v7 package。package 绑定完整 table+red+blue 世界、真实 GraspGen candidate-0、双 Franka capability 和 q4 qualification；当前仍等待精确人工 simulation-only 审核，未执行任何仿真 step。
+
+Artifact root: `/home/yanxu/robotwin20-runtime/artifacts/paos-route-v6.8.2-20260907T1515Z/route/`; route digest `ada0e733dbbe2e59145ef00c89bb33f3841bf379ab15dee94cb3ef31551455d1`; source-manifest digest `96f1e24087f76f8ced9cf1ab68c4fba4704f659683274882a5a7e513b85fc308`.
+
+Validation: route and collision-world validators passed; `motion_authorized=false`; no scene.step, benchmark, Gateway, Dora, Action, or hardware ran.
+
 ## [v6.8.1] - 2026-09-07
 
 Integrated the provider-owned RoboTwin/Curobo collision world and fixed the concrete OBB cache-capacity failure. The runtime now updates both arms when capacity is available or rebuilds warmed MotionGen instances from the existing RoboTwin profile when it is not; the swap is no-motion and fail-closed. Collision-world capacity is derived from obstacle count rather than a fixed constant.
