@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.3] - 2026-09-07
+
+Materialized the exact human-approved simulation-only probe package and ran one independent RoboTwin20 probe. The provider executed 1174 simulator steps but returned `unavailable` at retreat because the unselected left arm contacted the table; failure evidence, contact trace, and stop/reset records were persisted. This is a real route-safety failure, not a candidate or speed-tuning success, and no Gateway, Dora, Action, or hardware path was used.
+
+物化了与人工批准精确绑定的 simulation-only probe package，并运行一次独立 RoboTwin20 probe。provider 实际执行 1174 个 simulator steps，但在 retreat 阶段因未选中的左臂接触 table 返回 `unavailable`；失败 evidence、接触轨迹和 stop/reset 记录均已保存。这是路线安全失败，不是更换候选或调速成功；未调用 Gateway、Dora、Action 或 hardware。
+
+Artifacts: approval `/home/yanxu/robotwin20-runtime/artifacts/paos-route-v6.8.2-20260907T1515Z/route/probe/approval.json` (sha256 `a1529ddd1286863f2be390a8ccf192931515df7aefcf3a3654a997b0c00e5fdf`); failure `artifact://simulation-probe/franka-blocks-green0-collision-v682-20260907/block-green-1-0/failure`.
+
+Validation: approval materialization passed; probe returned expected exit code 2 with `status=unavailable`; focused route/probe suite `52 passed`. Six-dimension review recorded in `changelog/2026-09_part3.md`; architecture and maintainability remain partial until an explicit park/back-to-origin subtask or equivalent unselected-arm state is admitted.
+
 ## [v6.8.2] - 2026-09-07
 
 Materialized and independently validated a fresh route-request/v7 package for the provider collision-world probe. The package binds a complete table+red+blue world, real GraspGen candidate-0, dual-Franka capabilities, and q4 qualification; it remains pending exact human simulation-only approval and no simulation step was run.
