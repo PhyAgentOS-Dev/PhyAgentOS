@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.9] - 2026-09-07
+
+Materialized and independently validated a fresh no-motion `blocks_ranking_rgb` sequential dual-arm route package. It binds the latest simulation-probe worker, both-arm MotionCapability documents, controller qualification, and a complete non-target collision world. The package remains pending exact human simulation-only approval; no simulator step, Gateway, Dora, Action, or hardware motion ran.
+
+重新物化并独立校验了新的 no-motion `blocks_ranking_rgb` 顺序双臂 route package。它绑定最新 simulation-probe worker、双臂 MotionCapability、controller qualification 和完整非目标物体碰撞世界。package 仍等待精确人工 simulation-only 审批；未执行 simulator step、Gateway、Dora、Action 或硬件动作。
+
+Artifact root: `/home/yanxu/robotwin20-runtime/artifacts/paos-route-v6.8.9-20260907T2015Z/`; route digest `ba6153412ef675b4a1b7cd750f7ea02316cd10ad989873ccf1ef0c596aa09923`; source-manifest digest `b707f0836d973fb57c3e362e4488d6e93e85bf5d8a3f5c6b8e4c7cb1284815dc`; worker sha256 `7c7b1bfb6ba2c93419c5a34bec7165415e151bfc81aa65c2fba8fa5271de6d5d`.
+
+Validation: route-request and collision-world validators passed; focused dual-arm/collision/qualification/probe suite `49 passed`; `git diff --check` passed.
+
 ## [v6.8.8] - 2026-09-07
 
 Documented the cross-benchmark reuse boundary for single-arm Franka providers. PAOS Core, planning, Skill, capability, and lifecycle contracts are reusable; RoboTwin runtime, route readiness, probe, and collision-world code still require explicit single-arm topology branches.
