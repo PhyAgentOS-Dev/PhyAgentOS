@@ -2,6 +2,16 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.15] - 2026-09-07
+
+Completed the RGB attribute-sorting scenario analysis with the progressive-planning gaps that the initial design did not cover. Unknown block inventory now requires a discovery checkpoint followed by DAG expansion in a new PlanRevision under the same AgentTask. The design also distinguishes direct Action failure from post-success counterevidence such as a later-observed dropped block, and records that preserve/invalidate/fresh-evidence semantics must be applied across revisions before predecessor context can be reused.
+
+补全 RGB 属性排序场景的 progressive planning 缺口：未知方块库存必须先经过 discovery checkpoint，再在同一 AgentTask 的新 PlanRevision 中扩展 DAG；同时区分 Action 直接失败与成功后被后续观察发现脱落的反证，并明确跨 revision 复用前驱上下文之前必须实际应用 preserve/invalidate/fresh-evidence 语义。
+
+Files: `docs/forge/PLANNING_MODULE_DESIGN.md:L263-L306,L418-L426`, `changelog/2026-09_part3.md:L3-L38`.
+
+Validation: `git diff --check` passed; documentation-only analysis, with no Gateway, Dora, Action, simulation motion, or hardware execution.
+
 ## [v6.8.13] - 2026-09-07
 
 Recorded the PAOS-compatible generic attribute-sorting scenario and execution-loop extension in `docs/forge/PLANNING_MODULE_DESIGN.md:L233-L387`. The RGB block example is treated as a validation case: block count, colors, and locations are discovered by observation evidence rather than hard-coded. The design reuses AgentLoop, AgentComposedDispatch, AgentTaskCoordinator, PlanRevision, Forge Tools, Evidence, and Verifier; it defines direct-predecessor context injection, NodeSettlement persistence, reducer replay versus Action/Session rerun, Agent-selected ReplanDelta recovery, and a planner/plugin boundary without a second scheduler, store, DAG, or execution protocol.
