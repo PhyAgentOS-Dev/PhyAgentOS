@@ -6,7 +6,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from robotwin20_adapter.collision_world import validate_collision_world
-from robotwin20_adapter.dual_arm_state import validate_peer_arm_projection
+from robotwin20_adapter.dual_arm_state import (
+    PEER_ARM_SPHERE_PROJECTION_SCHEMA_VERSION,
+    validate_peer_arm_projection,
+    validate_peer_arm_sphere_projection,
+)
 
 
 class CuroboWorldPortError(RuntimeError):
@@ -116,9 +120,14 @@ def _world_config(
         )
     if peer_projection is not None:
         try:
-            validated_peer = validate_peer_arm_projection(peer_projection)
+            if peer_projection.get("schema_version") == PEER_ARM_SPHERE_PROJECTION_SCHEMA_VERSION:
+                validated_peer = validate_peer_arm_sphere_projection(peer_projection)
+            else:
+                validated_peer = validate_peer_arm_projection(peer_projection)
         except ValueError as exc:
             raise CuroboWorldPortError("peer arm projection is invalid") from exc
+        if validated_peer["scene_revision"] != artifact["scene_revision"]:
+            raise CuroboWorldPortError("peer arm projection scene revision is stale")
         peer_arm = validated_peer["selected_arm"]
         planner_arm = getattr(planner, "arm_id", None)
         if planner_arm in {"left", "right"} and planner_arm != peer_arm:
@@ -128,13 +137,17 @@ def _world_config(
             name = f"peer-{peer['link_id'].replace(':', '-') }"
             if name in names:
                 raise CuroboWorldPortError(f"peer arm obstacle duplicates planner object: {name}")
-            cuboids.append(
-                Cuboid(
-                    name=name,
-                    dims=[2.0 * float(value) for value in peer["half_extents_m"]],
-                    pose=_peer_pose_for_planner(planner, peer),
-                )
-            )
+            if peer["shape"] == "sphere":
+                # This vendored Curobo exposes WorldConfig.sphere but its
+                # WorldPrimitiveCollision loader only installs cuboids.  Use
+                # the enclosing cube so every native robot sphere really
+                # participates in collision checking; the conversion is
+                # conservative and remains explicit in the projection shape.
+                radius = float(peer["radius_m"])
+                dimensions = [2.0 * radius] * 3
+            else:
+                dimensions = [2.0 * float(value) for value in peer["half_extents_m"]]
+            cuboids.append(Cuboid(name=name, dims=dimensions, pose=_peer_pose_for_planner(planner, peer)))
     return WorldConfig(cuboid=cuboids)
 
 
@@ -154,6 +167,14 @@ def apply_collision_world(
         selected = list(planners)
     if len(selected) != 2 or any(item is None for item in selected):
         raise CuroboWorldPortError("both arm planners are required")
+    if peer_projections is not None:
+        state_revisions = {
+            projection.get("state_revision")
+            for projection in peer_projections.values()
+            if isinstance(projection, Mapping)
+        }
+        if len(peer_projections) != 2 or len(state_revisions) != 1 or None in state_revisions:
+            raise CuroboWorldPortError("peer projection state coverage is inconsistent")
     try:
         world_artifact = validate_collision_world(artifact)
     except ValueError as exc:

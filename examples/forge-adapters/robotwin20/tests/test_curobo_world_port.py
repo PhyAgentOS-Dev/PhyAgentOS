@@ -186,5 +186,58 @@ def test_port_projects_peer_arm_geometry_into_each_selected_arm_world():
 
 def test_port_rejects_missing_peer_projection_for_labeled_planner():
     planners = {"left": FakePlanner(arm_id="left"), "right": FakePlanner(arm_id="right")}
-    with pytest.raises(CuroboWorldPortError, match="peer arm projection is invalid"):
+    with pytest.raises(CuroboWorldPortError, match="state coverage is inconsistent"):
         apply_collision_world(planners, _artifact(), peer_projections={"left": {}})
+
+
+def test_port_loads_curobo_peer_spheres_as_conservative_collision_obstacles():
+    planners = {"left": FakePlanner(arm_id="left"), "right": FakePlanner(arm_id="right")}
+    peer = {}
+    for arm in ("left", "right"):
+        peer_arm = "right" if arm == "left" else "left"
+        peer[arm] = {
+            "schema_version": "paos-robotwin20-peer-arm-projection/v2",
+            "scene_revision": _artifact()["scene_revision"],
+            "state_revision": "scene:stabilized", "frame_id": "world",
+            "selected_arm": arm,
+            "obstacles": [{
+                "entity_ref": f"arm://{peer_arm}:curobo_sphere_0",
+                "link_id": f"{peer_arm}:curobo_sphere_0", "shape": "sphere",
+                "radius_m": 0.04, "center_m": [0.1, 0.2, 0.3],
+                "pose_wxyz": [0.1, 0.2, 0.3, 1, 0, 0, 0],
+                "provenance_ref": "artifact://scene/state",
+            }],
+            "source_ref": "artifact://scene/state", "motion_authorized": False,
+        }
+    apply_collision_world(planners, _artifact(), peer_projections=peer)
+    for planner in planners.values():
+        obstacle = next(item for item in planner.motion_gen.world_model.objects if item.name.startswith("peer-"))
+        assert obstacle.dims == [0.08, 0.08, 0.08]
+
+
+def test_port_rejects_stale_or_inconsistent_peer_state():
+    planners = {"left": FakePlanner(arm_id="left"), "right": FakePlanner(arm_id="right")}
+    world = _artifact()
+    peer = {}
+    for arm in ("left", "right"):
+        peer_arm = "right" if arm == "left" else "left"
+        peer[arm] = {
+            "schema_version": "paos-robotwin20-peer-arm-projection/v2",
+            "scene_revision": world["scene_revision"], "state_revision": "state-a",
+            "frame_id": "world", "selected_arm": arm,
+            "obstacles": [{
+                "entity_ref": f"arm://{peer_arm}:curobo_sphere_0",
+                "link_id": f"{peer_arm}:curobo_sphere_0", "shape": "sphere",
+                "radius_m": 0.04, "center_m": [0.1, 0.2, 0.3],
+                "pose_wxyz": [0.1, 0.2, 0.3, 1, 0, 0, 0],
+                "provenance_ref": "artifact://scene/state",
+            }],
+            "source_ref": "artifact://scene/state", "motion_authorized": False,
+        }
+    peer["right"]["state_revision"] = "state-b"
+    with pytest.raises(CuroboWorldPortError, match="state coverage is inconsistent"):
+        apply_collision_world(planners, world, peer_projections=peer)
+    peer["right"]["state_revision"] = "state-a"
+    peer["left"]["scene_revision"] = "stale-scene"
+    with pytest.raises(CuroboWorldPortError, match="scene revision is stale"):
+        apply_collision_world(planners, world, peer_projections=peer)

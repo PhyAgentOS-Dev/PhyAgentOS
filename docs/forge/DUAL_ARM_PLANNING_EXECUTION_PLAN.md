@@ -219,6 +219,20 @@ left planner  = table + non-target objects + right-arm(initial/park) geometry
 right planner = table + non-target objects + left-arm(initial/park) geometry
 ```
 
+#### RoboTwin 当前 peer-arm 几何投影
+
+RoboTwin/SAPIEN 中 Franka link 的实际碰撞形状主要是 mesh/convex mesh，不能继续使用“每个 link 恰好一个 `get_half_size()` box”的旧提取方式。provider 应复用与当前 Curobo planner 相同的机器人模型：
+
+1. 从未选中臂当前 hold `qpos` 调用 `motion_gen.kinematics.get_robot_as_spheres(q)`；
+2. 将 Curobo base-frame sphere center 转到共享 `world` frame，形成 `peer-arm-projection/v2`；
+3. 对选中臂 planner 再把 world center 转回该 planner 的 base frame；
+4. 将每个 sphere 显式物化成边长 `2r` 的保守包围 cuboid，装入当前 vendored Curobo 的 OBB collision cache；
+5. route 执行过程中继续验证未选中臂 hold drift，SAPIEN contact trace 仍作为独立执行事实。
+
+第 4 步不是把 SAPIEN mesh 猜成 box。投影来源仍是 Curobo 官方 robot collision-sphere 模型；包围 cuboid 是因为本仓库 vendored Curobo 的 `WorldPrimitiveCollision.load_collision_model()` 只加载 `WorldConfig.cuboid`，直接传 `WorldConfig.sphere` 虽能保存在对象列表中，却不会进入该碰撞 checker。该转换是保守的，可能增加 false-negative route availability（拒绝本可行路线），但不会缩小原始 sphere。provider receipt 和文档必须明确这一表示转换，不能把未实际加载的 `Sphere` 报告为碰撞已接入。
+
+这个投影只证明顺序模式中“选中臂相对固定 peer 姿态”的 planner collision scope。它不证明同步双臂 swept-volume，也不替代 simulator/Gateway 的实际接触事实。
+
 跨臂几何必须来自同一个 `scene_revision`/`state_revision`，并记录 link identity、mesh/primitive 来源和姿态来源。目标物体在 close 后转为 attached geometry；release 后从 attached 集合移除并按新 world revision 重新投影。
 
 ### 4.2 同时运动

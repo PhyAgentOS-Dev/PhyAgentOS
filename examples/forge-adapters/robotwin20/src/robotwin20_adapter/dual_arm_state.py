@@ -14,6 +14,7 @@ from typing import Any
 
 DUAL_ARM_STATE_SCHEMA_VERSION = "paos-robotwin20-dual-arm-state/v1"
 PEER_ARM_PROJECTION_SCHEMA_VERSION = "paos-robotwin20-peer-arm-projection/v1"
+PEER_ARM_SPHERE_PROJECTION_SCHEMA_VERSION = "paos-robotwin20-peer-arm-projection/v2"
 
 
 class DualArmStateError(ValueError):
@@ -193,8 +194,94 @@ def validate_peer_arm_projection(value: Mapping[str, Any]) -> dict[str, Any]:
     )
 
 
+def build_peer_arm_sphere_projection(
+    *, scene_revision: str, state_revision: str, frame_id: str,
+    selected_arm: str, spheres: Sequence[Mapping[str, Any]], source_ref: str,
+) -> dict[str, Any]:
+    """Build a peer projection from Curobo's native robot collision spheres.
+
+    Sphere centers are expressed in the declared frame.  The provider must
+    perform any planner-base to world transform before calling this function;
+    this protocol deliberately does not guess a transform or approximate a
+    mesh as a box.
+    """
+    if selected_arm not in {"left", "right"}:
+        raise DualArmStateError("selected_arm is invalid")
+    if frame_id != "world":
+        raise DualArmStateError("peer sphere projection frame must be world")
+    if not isinstance(source_ref, str) or not source_ref.startswith("artifact://"):
+        raise DualArmStateError("peer projection source_ref is invalid")
+    peer_arm = "right" if selected_arm == "left" else "left"
+    obstacles: list[dict[str, Any]] = []
+    for index, item in enumerate(spheres):
+        if not isinstance(item, Mapping) or set(item) != {"center_m", "radius_m"}:
+            raise DualArmStateError("peer sphere fields are invalid")
+        center = _finite_vector(item["center_m"], 3, f"{peer_arm}.sphere[{index}].center_m")
+        radius = float(item["radius_m"])
+        if not math.isfinite(radius) or radius <= 0:
+            raise DualArmStateError("peer sphere radius must be positive")
+        link_id = qualified_link_id(peer_arm, f"curobo_sphere_{index}")
+        obstacles.append({
+            "entity_ref": f"arm://{link_id}", "link_id": link_id,
+            "shape": "sphere", "radius_m": radius,
+            "center_m": center, "pose_wxyz": [*center, 1.0, 0.0, 0.0, 0.0],
+            "provenance_ref": source_ref,
+        })
+    if not obstacles:
+        raise DualArmStateError("peer sphere projection is empty")
+    return {
+        "schema_version": PEER_ARM_SPHERE_PROJECTION_SCHEMA_VERSION,
+        "scene_revision": scene_revision, "state_revision": state_revision,
+        "frame_id": frame_id, "selected_arm": selected_arm,
+        "obstacles": obstacles, "source_ref": source_ref,
+        "motion_authorized": False,
+    }
+
+
+def validate_peer_arm_sphere_projection(value: Mapping[str, Any]) -> dict[str, Any]:
+    required = {
+        "schema_version", "scene_revision", "state_revision", "frame_id",
+        "selected_arm", "obstacles", "source_ref", "motion_authorized",
+    }
+    if not isinstance(value, Mapping) or set(value) != required:
+        raise DualArmStateError("peer sphere projection fields are invalid")
+    if value["schema_version"] != PEER_ARM_SPHERE_PROJECTION_SCHEMA_VERSION:
+        raise DualArmStateError("peer sphere projection schema is invalid")
+    if value["motion_authorized"] is not False:
+        raise DualArmStateError("peer sphere projection authority is invalid")
+    if value["selected_arm"] not in {"left", "right"}:
+        raise DualArmStateError("selected_arm is invalid")
+    peer_arm = "right" if value["selected_arm"] == "left" else "left"
+    spheres = []
+    for index, item in enumerate(value["obstacles"]):
+        if not isinstance(item, Mapping) or set(item) != {
+            "entity_ref", "link_id", "shape", "radius_m", "center_m",
+            "pose_wxyz", "provenance_ref",
+        } or item["shape"] != "sphere":
+            raise DualArmStateError("peer sphere obstacle shape is invalid")
+        link_id = item.get("link_id")
+        expected_link_id = qualified_link_id(peer_arm, f"curobo_sphere_{index}")
+        if link_id != expected_link_id or item["entity_ref"] != f"arm://{expected_link_id}":
+            raise DualArmStateError("peer sphere link identity is invalid")
+        if item["provenance_ref"] != value["source_ref"]:
+            raise DualArmStateError("peer sphere provenance is invalid")
+        center = _finite_vector(item["center_m"], 3, f"{link_id}.center_m")
+        if _finite_vector(item["pose_wxyz"], 7, f"{link_id}.pose_wxyz") != [
+            *center, 1.0, 0.0, 0.0, 0.0,
+        ]:
+            raise DualArmStateError("peer sphere pose is invalid")
+        spheres.append({"center_m": item.get("center_m"), "radius_m": item.get("radius_m")})
+    return build_peer_arm_sphere_projection(
+        scene_revision=value["scene_revision"], state_revision=value["state_revision"],
+        frame_id=value["frame_id"], selected_arm=value["selected_arm"],
+        spheres=spheres, source_ref=value["source_ref"],
+    )
+
+
 __all__ = [
     "DUAL_ARM_STATE_SCHEMA_VERSION", "PEER_ARM_PROJECTION_SCHEMA_VERSION",
     "DualArmStateError", "build_dual_arm_state", "validate_dual_arm_state", "hold_drift",
     "qualified_link_id", "build_peer_arm_projection", "validate_peer_arm_projection",
+    "PEER_ARM_SPHERE_PROJECTION_SCHEMA_VERSION", "build_peer_arm_sphere_projection",
+    "validate_peer_arm_sphere_projection",
 ]

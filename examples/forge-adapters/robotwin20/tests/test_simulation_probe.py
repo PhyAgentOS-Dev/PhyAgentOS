@@ -5,6 +5,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import robotwin_simulation_probe_worker as probe_worker
@@ -17,6 +18,7 @@ from robotwin_simulation_probe_worker import (
     APPROVAL_SCHEMA_VERSION,
     SimulationProbeError,
     _artifact_record,
+    _capture_peer_projection,
     _execute_segment,
     _guard_controller_source_binding,
     _handle_factory,
@@ -61,6 +63,71 @@ QUALIFICATION_TEST_IDS = (
     "error_path",
     "reset_path",
 )
+
+
+def _install_fake_torch(monkeypatch):
+    class TensorArgs:
+        device = "cpu"
+
+    module = SimpleNamespace(as_tensor=lambda value, device=None: value)
+    monkeypatch.setitem(sys.modules, "torch", module)
+    return TensorArgs()
+
+
+def test_peer_projection_uses_curobo_native_spheres_and_world_transform(monkeypatch):
+    tensor_args = _install_fake_torch(monkeypatch)
+    sphere = SimpleNamespace(pose=[0.1, 0.0, 0.2, 1, 0, 0, 0], radius=0.03)
+    kinematics = SimpleNamespace(get_robot_as_spheres=lambda q, filter_valid: [[sphere]])
+    peer_planner = SimpleNamespace(
+        motion_gen=SimpleNamespace(kinematics=kinematics, tensor_args=tensor_args),
+        robot_origion_pose=SimpleNamespace(p=[1.0, 2.0, 3.0], q=[1.0, 0.0, 0.0, 0.0]),
+    )
+    task = SimpleNamespace(robot=SimpleNamespace(
+        left_planner=SimpleNamespace(), right_planner=peer_planner,
+        left_entity=SimpleNamespace(),
+        right_entity=SimpleNamespace(get_qpos=lambda: [0.0] * 7),
+    ))
+    state = {
+        "scene_revision": "scene", "state_revision": "state", "frame_id": "world",
+        "provenance_refs": ["artifact://scene/state"],
+    }
+    projection = _capture_peer_projection(task, state, "left")
+    assert projection["obstacles"][0]["center_m"] == pytest.approx([1.1, 2.0, 3.2])
+    assert projection["obstacles"][0]["radius_m"] == 0.03
+
+
+def test_peer_projection_reports_unavailable_native_model(monkeypatch):
+    _install_fake_torch(monkeypatch)
+    task = SimpleNamespace(robot=SimpleNamespace(
+        left_planner=SimpleNamespace(),
+        right_planner=SimpleNamespace(motion_gen=SimpleNamespace(kinematics=SimpleNamespace())),
+        left_entity=SimpleNamespace(), right_entity=SimpleNamespace(get_qpos=lambda: [0.0] * 7),
+    ))
+    state = {
+        "scene_revision": "scene", "state_revision": "state", "frame_id": "world",
+        "provenance_refs": ["artifact://scene/state"],
+    }
+    with pytest.raises(SimulationProbeError, match="sphere model is unavailable"):
+        _capture_peer_projection(task, state, "left")
+
+
+def test_peer_projection_reports_empty_native_model(monkeypatch):
+    tensor_args = _install_fake_torch(monkeypatch)
+    kinematics = SimpleNamespace(get_robot_as_spheres=lambda q, filter_valid: [[]])
+    peer_planner = SimpleNamespace(
+        motion_gen=SimpleNamespace(kinematics=kinematics, tensor_args=tensor_args),
+        robot_origion_pose=SimpleNamespace(p=[0, 0, 0], q=[1, 0, 0, 0]),
+    )
+    task = SimpleNamespace(robot=SimpleNamespace(
+        left_planner=SimpleNamespace(), right_planner=peer_planner,
+        left_entity=SimpleNamespace(), right_entity=SimpleNamespace(get_qpos=lambda: [0.0] * 7),
+    ))
+    state = {
+        "scene_revision": "scene", "state_revision": "state", "frame_id": "world",
+        "provenance_refs": ["artifact://scene/state"],
+    }
+    with pytest.raises(SimulationProbeError, match="sphere model is empty"):
+        _capture_peer_projection(task, state, "left")
 
 
 def _profile() -> dict[str, object]:

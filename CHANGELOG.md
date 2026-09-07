@@ -2,6 +2,24 @@
 
 All notable changes to PhyAgentOS are documented here. Categories follow Keep a Changelog.
 
+## [v6.8.11] - 2026-09-07
+
+Replaced the failed SAPIEN single-box peer-arm extraction with a provider-owned Curobo collision-sphere projection. The held peer arm is evaluated at its captured qpos, transformed through the shared world frame, and loaded into each selected-arm planner as conservative enclosing OBBs because the vendored collision checker does not install `WorldConfig.sphere`. Real no-motion validation loaded 61 peer obstacles plus table and two blocks into each planner.
+
+用 provider-owned Curobo collision-sphere 投影替代失败的 SAPIEN 单 box 机械臂投影。未选中臂按捕获的 hold qpos 求碰撞球，经共享 world frame 转换，并因 vendored collision checker 不会装载 `WorldConfig.sphere` 而以保守包围 OBB 加载到每个选中臂 planner。真实 no-motion 验证确认每侧加载 61 个 peer 障碍以及 table 和两个方块。
+
+Files: `dual_arm_state.py:L17,L197-L287`, `robotwin_simulation_probe_worker.py:L240-L289`, `robotwin_curobo_world_port.py:L9-L13,L121-L156,L166-L211`, tests, and `DUAL_ARM_PLANNING_EXECUTION_PLAN.md:L222-L234`.
+
+Validation: focused `51 passed`; full relevant suite `776 passed, 1 skipped`; real Curobo no-motion load `64 active OBB per arm`, Ruff, compileall, and `git diff --check` passed. New route package `/home/yanxu/robotwin20-runtime/artifacts/paos-route-v6.8.11-20260907T2200Z/` remains pending human review with route digest `f66bd11a5d1f941ed9c93facd6476e1eee07163ec1df6a2d377a7c3cbb3379c0`, source-manifest digest `542ea4aac6cfbed491e9f8fdf70eff9a06873c69c7cd9d6632776fdad23d8f7e`, and worker digest `c47601e14f3b632481babdbf8eb22e4c1cd3445aaea46ed9d88bd92a7603df96`. No simulation step, Gateway, Dora, Action, or hardware motion ran in v6.8.11.
+
+## [v6.8.10] - 2026-09-07
+
+Ran the human-approved v6.8.9 simulation-only probe once. It failed closed during scene initialization with `peer arm collision geometry is unavailable`, before any simulator/control step. Evidence showed that SAPIEN Franka links expose mesh/convex geometry while the old provider projection required a single box; candidate, speed, TCP, route geometry, and OBB cache were not implicated.
+
+执行了一次经人工批准的 v6.8.9 simulation-only probe。它在任何 simulator/control step 前，于 scene initialization 因 `peer arm collision geometry is unavailable` fail-closed。证据表明 SAPIEN Franka link 提供 mesh/convex geometry，而旧 provider projection 强制要求单 box；问题与 candidate、速度、TCP、route geometry 或 OBB cache 无关。
+
+Artifacts: `/home/yanxu/robotwin20-runtime/artifacts/paos-route-v6.8.9-20260907T2015Z/probe/result.json` and the bound failure/snapshot records. No Gateway, Dora, Action, or hardware path was used.
+
 ## [v6.8.9] - 2026-09-07
 
 Materialized and independently validated a fresh no-motion `blocks_ranking_rgb` sequential dual-arm route package. It binds the latest simulation-probe worker, both-arm MotionCapability documents, controller qualification, and a complete non-target collision world. The package remains pending exact human simulation-only approval; no simulator step, Gateway, Dora, Action, or hardware motion ran.

@@ -6,9 +6,11 @@ from robotwin20_adapter.dual_arm_state import (
     DualArmStateError,
     build_dual_arm_state,
     build_peer_arm_projection,
+    build_peer_arm_sphere_projection,
     hold_drift,
     validate_dual_arm_state,
     validate_peer_arm_projection,
+    validate_peer_arm_sphere_projection,
 )
 
 
@@ -72,3 +74,57 @@ def test_invalid_peer_and_state_inputs_fail_closed():
     invalid["right"]["links"][0]["link_id"] = "left:panda_hand"
     with pytest.raises(DualArmStateError, match="link identity"):
         validate_dual_arm_state(invalid)
+
+
+def test_curobo_sphere_projection_preserves_native_geometry_and_world_frame():
+    projection = build_peer_arm_sphere_projection(
+        scene_revision="scene", state_revision="state", frame_id="world",
+        selected_arm="right",
+        spheres=[
+            {"center_m": [0.1, 0.2, 0.3], "radius_m": 0.04},
+            {"center_m": [0.4, 0.5, 0.6], "radius_m": 0.02},
+        ],
+        source_ref="artifact://scene/dual-arm-state",
+    )
+    assert projection["schema_version"] == "paos-robotwin20-peer-arm-projection/v2"
+    assert projection["obstacles"][0]["shape"] == "sphere"
+    assert projection["obstacles"][0]["link_id"] == "left:curobo_sphere_0"
+    assert validate_peer_arm_sphere_projection(projection) == projection
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"spheres": []}, "empty"),
+        ({"frame_id": "left_base"}, "frame must be world"),
+        ({"spheres": [{"center_m": [0, 0, 0], "radius_m": float("nan")}]}, "positive"),
+    ],
+)
+def test_curobo_sphere_projection_rejects_unusable_provider_geometry(kwargs, message):
+    values = {
+        "scene_revision": "scene", "state_revision": "state", "frame_id": "world",
+        "selected_arm": "left", "spheres": [{"center_m": [0, 0, 0], "radius_m": 0.02}],
+        "source_ref": "artifact://scene/dual-arm-state",
+    }
+    values.update(kwargs)
+    with pytest.raises(DualArmStateError, match=message):
+        build_peer_arm_sphere_projection(**values)
+
+
+def test_curobo_sphere_projection_rejects_state_identity_drift():
+    projection = build_peer_arm_sphere_projection(
+        scene_revision="scene", state_revision="state", frame_id="world",
+        selected_arm="right", spheres=[{"center_m": [0, 0, 0], "radius_m": 0.02}],
+        source_ref="artifact://scene/dual-arm-state",
+    )
+    projection["obstacles"][0]["link_id"] = "right:curobo_sphere_0"
+    with pytest.raises(DualArmStateError, match="link identity"):
+        validate_peer_arm_sphere_projection(projection)
+
+
+def test_hold_drift_rejects_scene_revision_drift():
+    before = _state()
+    after = _state()
+    after["scene_revision"] = "scene-new"
+    with pytest.raises(DualArmStateError, match="revision or frame"):
+        hold_drift(before, after, arm_id="left")

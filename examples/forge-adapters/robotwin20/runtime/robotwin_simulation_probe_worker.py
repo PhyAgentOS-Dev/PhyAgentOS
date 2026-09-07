@@ -46,7 +46,7 @@ from robotwin20_adapter.controller_qualification import (
 from robotwin20_adapter.dual_arm_state import (
     DualArmStateError,
     build_dual_arm_state,
-    build_peer_arm_projection,
+    build_peer_arm_sphere_projection,
     hold_drift,
     validate_dual_arm_state,
 )
@@ -238,45 +238,51 @@ def _capture_dual_arm_state(task: Any, scene_revision: str) -> dict[str, Any]:
 
 
 def _capture_peer_projection(task: Any, state: Mapping[str, Any], selected_arm: str) -> dict[str, Any]:
-    """Project the held arm's live collision boxes for the selected planner."""
+    """Project the held arm using Curobo's native collision-sphere model.
+
+    RoboTwin's SAPIEN links are mesh/convex geometry and cannot be represented
+    safely by the old single-box extraction.  Curobo already owns a sphere
+    approximation for the same robot model, so use that model at the captured
+    hold qpos and transform its centers into the shared world frame.
+    """
     import numpy as np
+    import torch
+    import transforms3d.quaternions as tquat
 
     peer_arm = "right" if selected_arm == "left" else "left"
+    planner = task.robot.right_planner if peer_arm == "right" else task.robot.left_planner
+    kinematics = getattr(getattr(planner, "motion_gen", None), "kinematics", None)
+    get_spheres = getattr(kinematics, "get_robot_as_spheres", None)
+    if not callable(get_spheres):
+        raise SimulationProbeError("peer arm collision sphere model is unavailable")
     entity = task.robot.right_entity if peer_arm == "right" else task.robot.left_entity
-    links: list[dict[str, Any]] = []
-    for link in entity.get_links():
-        shapes = []
-        getter = getattr(link, "get_collision_shapes", None)
-        if callable(getter):
-            shapes = list(getter())
-        if not shapes:
-            for component in getattr(link, "components", []):
-                getter = getattr(component, "get_collision_shapes", None)
-                if callable(getter):
-                    shapes.extend(getter())
-        if len(shapes) != 1 or not callable(getattr(shapes[0], "get_half_size", None)):
-            raise SimulationProbeError("peer arm collision geometry is unavailable")
-        extents = [float(item) for item in shapes[0].get_half_size()]
-        local_pose = getattr(shapes[0], "get_local_pose", lambda: None)()
-        if local_pose is not None and hasattr(local_pose, "to_transformation_matrix"):
-            matrix = local_pose.to_transformation_matrix()
-            identity = np.eye(4)
-            if not np.allclose(np.asarray(matrix), identity, atol=1e-6):
-                raise SimulationProbeError("peer arm collision shape pose is unsupported")
-        pose = link.get_pose()
-        links.append({
-            "arm_id": peer_arm,
-            "link_name": str(link.get_name()),
-            "half_extents_m": extents,
-            "pose_wxyz": [*map(float, pose.p), *map(float, pose.q)],
-        })
+    qpos = np.asarray(entity.get_qpos()[:7], dtype=np.float32).reshape(1, -1)
+    tensor_args = getattr(planner.motion_gen, "tensor_args", None)
+    device = getattr(tensor_args, "device", "cpu")
     try:
-        return build_peer_arm_projection(
+        sphere_batches = get_spheres(torch.as_tensor(qpos, device=device), filter_valid=True)
+    except Exception as exc:
+        raise SimulationProbeError("peer arm collision sphere model failed") from exc
+    if not sphere_batches or not sphere_batches[0]:
+        raise SimulationProbeError("peer arm collision sphere model is empty")
+    base = planner.robot_origion_pose
+    base_rotation = np.asarray(tquat.quat2mat(list(base.q)), dtype=np.float64)
+    base_position = np.asarray(base.p, dtype=np.float64)
+    spheres: list[dict[str, Any]] = []
+    for sphere in sphere_batches[0]:
+        pose = getattr(sphere, "pose", None)
+        radius = getattr(sphere, "radius", None)
+        if pose is None or radius is None or len(pose) < 3:
+            raise SimulationProbeError("peer arm collision sphere record is invalid")
+        center = base_position + base_rotation @ np.asarray(pose[:3], dtype=np.float64)
+        spheres.append({"center_m": [*map(float, center)], "radius_m": float(radius)})
+    try:
+        return build_peer_arm_sphere_projection(
             scene_revision=state["scene_revision"],
             state_revision=state["state_revision"],
             frame_id=state["frame_id"],
             selected_arm=selected_arm,
-            links=links,
+            spheres=spheres,
             source_ref=state["provenance_refs"][0],
         )
     except DualArmStateError as exc:
