@@ -17,6 +17,11 @@ from PhyAgentOS.config.paths import get_forge_runtime_root, get_skill_bundle_roo
 from PhyAgentOS.skill_runtime.archive import ArchiveValidator, sha256_file
 from PhyAgentOS.skill_runtime.locking import SkillOperationBusyError, SkillOperationLock
 from PhyAgentOS.skill_runtime.manifest import NodeLock, SkillManifest, load_manifest
+from PhyAgentOS.skill_runtime.node_manifest import (
+    NodeManifest,
+    NodeManifestError,
+    load_node_manifest,
+)
 from PhyAgentOS.skill_runtime.runtime_manifest import normalize_arch, normalize_platform
 from PhyAgentOS.skill_runtime.state import RuntimeStateStore
 
@@ -171,7 +176,12 @@ class SkillInstaller:
 
 
 class NodeInstaller:
-    """Install SHA-256-pinned ``tar.gz`` assets containing one executable."""
+    """Install SHA-256-pinned Forge node artifacts.
+
+    Single-executable ``tar.gz`` archives keep the legacy receipt layout. A
+    digest-locked multi-file bundle is verified against its embedded
+    ``node-manifest.json`` and installed as an immutable directory.
+    """
 
     receipt_name = ".paos-node.json"
 
@@ -185,7 +195,13 @@ class NodeInstaller:
         self.root = runtime_root / "nodes"
         self.state_store = state_store or RuntimeStateStore()
 
-    def install(self, archive: Path, lock: NodeLock) -> Path:
+    def install(
+        self,
+        archive: Path,
+        lock: NodeLock,
+        *,
+        expected_archive_sha256: str | None = None,
+    ) -> Path:
         active = _active_skills(self.state_store)
         if active:
             raise InstallerError(
@@ -194,6 +210,8 @@ class NodeInstaller:
         self._verify_lock_host(lock)
         if not archive.is_file() or archive.is_symlink():
             raise InstallerError("downloaded Forge node archive is not a regular file")
+        if lock.is_bundle:
+            return self._install_bundle(archive, lock, expected_archive_sha256)
         if sha256_file(archive) != lock.sha256:
             raise InstallerError("downloaded Forge node archive sha256 does not match Skill lock")
 
@@ -232,8 +250,66 @@ class NodeInstaller:
         finally:
             shutil.rmtree(temporary, ignore_errors=True)
 
+    def _install_bundle(
+        self,
+        archive: Path,
+        lock: NodeLock,
+        expected_archive_sha256: str | None,
+    ) -> Path:
+        if expected_archive_sha256 is not None:
+            if sha256_file(archive) != expected_archive_sha256.lower():
+                raise InstallerError(
+                    "downloaded Forge node archive sha256 does not match registry metadata"
+                )
+        versions = self.root / lock.node_id / "versions"
+        versions.mkdir(parents=True, exist_ok=True)
+        target = versions / lock.artifact_id
+        if target.exists():
+            if self.satisfies(lock):
+                return target
+            raise InstallerError("installed node artifact ID has different contents")
+        temporary = Path(tempfile.mkdtemp(prefix=".node-install-", dir=versions))
+        try:
+            staged = temporary / lock.artifact_id
+            ArchiveValidator().extract(archive, staged, verify_manifest=False)
+            self._verify_bundle_payload(staged, lock)
+            os.replace(staged, target)
+            return target
+        except InstallerError:
+            raise
+        except Exception as exc:
+            raise InstallerError(f"Forge node bundle installation failed: {exc}") from exc
+        finally:
+            shutil.rmtree(temporary, ignore_errors=True)
+
+    @staticmethod
+    def _verify_bundle_payload(root: Path, lock: NodeLock) -> NodeManifest:
+        try:
+            manifest = load_node_manifest(root / "node-manifest.json", verify_files=True)
+        except NodeManifestError as exc:
+            raise InstallerError(str(exc)) from exc
+        if manifest.node_id != lock.node_id:
+            raise InstallerError("installed node manifest node_id does not match Skill lock")
+        if manifest.artifact_id != lock.artifact_id:
+            raise InstallerError("installed node manifest artifact_id does not match Skill lock")
+        if manifest.version != lock.version:
+            raise InstallerError("installed node manifest version does not match Skill lock")
+        if manifest.digest != lock.digest:
+            raise InstallerError("installed node manifest digest does not match Skill lock")
+        try:
+            manifest.verify_host()
+        except NodeManifestError as exc:
+            raise InstallerError(str(exc)) from exc
+        return manifest
+
     def load(self, lock: NodeLock) -> Path:
         self._verify_lock_host(lock)
+        if lock.is_bundle:
+            root = self.root / lock.node_id / "versions" / lock.artifact_id
+            if not root.is_dir() or root.is_symlink():
+                raise InstallerError("installed Forge node bundle is missing")
+            self._verify_bundle_payload(root, lock)
+            return root
         path = self.root / lock.node_id / "versions" / lock.artifact_id / lock.entrypoint
         receipt_path = path.parent / self.receipt_name
         if not path.is_file() or path.is_symlink():
@@ -265,6 +341,22 @@ class NodeInstaller:
             raise InstallerError("installed Forge node executable sha256 does not match receipt")
         return path
 
+    def load_entrypoints(self, lock: NodeLock) -> dict[str, Path]:
+        """Return ``name -> executable`` for every entrypoint a lock provides."""
+        if not lock.is_bundle:
+            entrypoint = lock.entrypoint
+            if entrypoint is None:
+                raise InstallerError("installed Forge node lock is missing an entrypoint")
+            return {entrypoint: self.load(lock)}
+        root = self.load(lock)
+        try:
+            manifest = load_node_manifest(
+                root / "node-manifest.json", verify_files=False
+            )
+        except NodeManifestError as exc:
+            raise InstallerError(str(exc)) from exc
+        return {name: root / path for name, path in manifest.entrypoints.items()}
+
     def satisfies(self, lock: NodeLock) -> bool:
         try:
             self.load(lock)
@@ -274,7 +366,7 @@ class NodeInstaller:
 
     @staticmethod
     def _verify_lock_host(lock: NodeLock) -> None:
-        if lock.artifact_type != "executable_tar_gz":
+        if not lock.is_bundle and lock.artifact_type != "executable_tar_gz":
             raise InstallerError(f"unsupported Forge node artifact type: {lock.artifact_type}")
         if lock.platform != normalize_platform() or lock.arch != normalize_arch():
             raise InstallerError(
@@ -368,10 +460,10 @@ class SkillEnvironmentBuilder:
             raise InstallerError(f"unknown Skill profile: {profile_name}")
         providers: dict[str, tuple[NodeLock, Path]] = {}
         for _, lock in sorted(skill.artifacts.nodes.items()):
-            binary = self.nodes.load(lock)
-            if lock.entrypoint in providers:
-                raise InstallerError(f"duplicate Forge node entrypoint: {lock.entrypoint}")
-            providers[lock.entrypoint] = (lock, binary)
+            for name, binary in self.nodes.load_entrypoints(lock).items():
+                if name in providers:
+                    raise InstallerError(f"duplicate Forge node entrypoint: {name}")
+                providers[name] = (lock, binary)
         required = {path.as_posix() for path in profile.required_binaries}
         missing = sorted(required - providers.keys())
         if missing:
@@ -385,12 +477,7 @@ class SkillEnvironmentBuilder:
             "skill_version": skill.version,
             "profile": profile_name,
             "nodes": {
-                lock.node_id: {
-                    "artifact_id": lock.artifact_id,
-                    "artifact_type": lock.artifact_type,
-                    "entrypoint": lock.entrypoint,
-                    "sha256": lock.sha256,
-                }
+                lock.node_id: self._lock_value(lock)
                 for lock, _ in providers.values()
             },
             "entrypoints": sorted(required),
@@ -464,6 +551,17 @@ class SkillEnvironmentBuilder:
                 shutil.rmtree(temporary, ignore_errors=True)
         self._replace_symlink(profile_root / "current", target)
         return target / "bin"
+
+    @staticmethod
+    def _lock_value(lock: NodeLock) -> dict[str, object]:
+        value: dict[str, object] = {"artifact_id": lock.artifact_id}
+        if lock.is_bundle:
+            value["digest"] = lock.digest
+        else:
+            value["artifact_type"] = lock.artifact_type
+            value["entrypoint"] = lock.entrypoint
+            value["sha256"] = lock.sha256
+        return value
 
     @staticmethod
     def _replace_symlink(link: Path, target: Path) -> None:

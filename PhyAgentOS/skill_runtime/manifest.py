@@ -39,6 +39,7 @@ _NODE_LOCK_FIELDS = {
     "artifact_type",
     "entrypoint",
     "sha256",
+    "digest",
 }
 
 
@@ -146,16 +147,29 @@ class RuntimeProfile:
 
 @dataclass(frozen=True)
 class NodeLock:
-    """Immutable reference to one single-executable ``tar.gz`` release asset."""
+    """Immutable reference to one Forge node artifact.
+
+    Two lock forms are supported:
+
+    * ``executable_tar_gz`` — a single-executable archive pinned by ``sha256``.
+    * ``node_bundle`` — a multi-file node bundle pinned by the digest of its
+      embedded ``node-manifest.json``; entrypoints come from that manifest.
+    """
 
     node_id: str
     artifact_id: str
     version: str
     platform: str
     arch: str
-    artifact_type: str
-    entrypoint: str
-    sha256: str
+    artifact_type: str | None = None
+    entrypoint: str | None = None
+    sha256: str | None = None
+    digest: str | None = None
+
+    @property
+    def is_bundle(self) -> bool:
+        """True when this lock pins a multi-file node bundle by digest."""
+        return self.digest is not None
 
     @classmethod
     def from_dict(cls, node_id: str, value: Any) -> NodeLock:
@@ -168,6 +182,26 @@ class NodeLock:
         artifact_id = _string(data.get("artifact_id"), f"{label}.artifact_id")
         if artifact_id in {".", ".."} or "/" in artifact_id or "\\" in artifact_id:
             raise ManifestError(f"{label}.artifact_id must be directory-safe")
+        common = {
+            "node_id": safe_node_id,
+            "artifact_id": artifact_id,
+            "version": _string(data.get("version"), f"{label}.version"),
+            "platform": _string(data.get("platform"), f"{label}.platform").lower(),
+            "arch": _string(data.get("arch"), f"{label}.arch").lower(),
+        }
+        raw_digest = data.get("digest")
+        if raw_digest is not None:
+            conflicting = sorted({"artifact_type", "entrypoint", "sha256"} & set(data))
+            if conflicting:
+                raise ManifestError(
+                    f"{label}.digest must not be combined with: {', '.join(conflicting)}"
+                )
+            digest = _string(raw_digest, f"{label}.digest").lower()
+            if len(digest) != 64 or any(
+                char not in "0123456789abcdef" for char in digest
+            ):
+                raise ManifestError(f"{label}.digest must be a sha256 digest")
+            return cls(**common, digest=digest)
         artifact_type = _string(
             data.get("artifact_type"), f"{label}.artifact_type"
         ).lower()
@@ -183,11 +217,7 @@ class NodeLock:
         if len(sha256) != 64 or any(char not in "0123456789abcdef" for char in sha256):
             raise ManifestError(f"{label}.sha256 must be a sha256 digest")
         return cls(
-            node_id=safe_node_id,
-            artifact_id=artifact_id,
-            version=_string(data.get("version"), f"{label}.version"),
-            platform=_string(data.get("platform"), f"{label}.platform").lower(),
-            arch=_string(data.get("arch"), f"{label}.arch").lower(),
+            **common,
             artifact_type=artifact_type,
             entrypoint=entrypoint,
             sha256=sha256,
