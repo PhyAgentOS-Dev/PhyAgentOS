@@ -1019,16 +1019,27 @@ def _install_skill_bundle(
                                 lock.artifact_id,
                                 expected_sha256=lock.sha256,
                             )
-                            if node_artifact.sha256 != lock.sha256:
-                                raise RuntimeError(
-                                    f"Registry digest for Node {node_id!r} does not match "
-                                    "Skill lock"
-                                )
+                            if lock.sha256 is not None:
+                                if node_artifact.sha256 != lock.sha256:
+                                    raise RuntimeError(
+                                        f"Registry digest for Node {node_id!r} does not match "
+                                        "Skill lock"
+                                    )
+                            elif lock.digest is not None:
+                                if node_artifact.node_digest != lock.digest:
+                                    raise RuntimeError(
+                                        f"Registry node digest for Node {node_id!r} does not "
+                                        "match Skill lock"
+                                    )
                             node_archive = cache.download(node_artifact)
-                            installed = node_installer.install(node_archive, lock)
+                            installed = node_installer.install(
+                                node_archive,
+                                lock,
+                                expected_archive_sha256=node_artifact.sha256,
+                            )
                             if not node_installer.satisfies(lock):
                                 raise RuntimeError(
-                                    f"Node executable {installed!s} does not satisfy Skill lock"
+                                    f"Node artifact {installed!s} does not satisfy Skill lock"
                                 )
                     missing_nodes = []
                 try:
@@ -1433,7 +1444,7 @@ def forge_node_install(
         help="Independently obtained local Node .tar.gz instead of a Registry download",
     ),
 ):
-    """Download the exact single-executable archive pinned by a Skill lock."""
+    """Download the exact Node artifact (archive or bundle) pinned by a Skill lock."""
     from PhyAgentOS.skill_runtime.catalog import SkillCatalog
     from PhyAgentOS.skill_runtime.installer import NodeInstaller
     from PhyAgentOS.skill_runtime.registry import DownloadCache, RegistryClient
@@ -1445,20 +1456,33 @@ def forge_node_install(
             lock = manifest.artifacts.nodes.get(node_id)
             if lock is None:
                 raise RuntimeError(f"Skill {skill_name!r} does not lock Node {node_id!r}")
+            artifact = None
             if archive is None:
                 with RegistryClient() as registry:
                     artifact = registry.node(
                         lock.artifact_id,
                         expected_sha256=lock.sha256,
                     )
-                if artifact.sha256 != lock.sha256:
-                    raise RuntimeError("Registry Node sha256 does not match the Skill lock")
+                if lock.sha256 is not None:
+                    if artifact.sha256 != lock.sha256:
+                        raise RuntimeError(
+                            "Registry Node sha256 does not match the Skill lock"
+                        )
+                elif lock.digest is not None:
+                    if artifact.node_digest != lock.digest:
+                        raise RuntimeError(
+                            "Registry Node digest does not match the Skill lock"
+                        )
                 node_archive = cache.download(artifact)
             else:
                 node_archive = archive.expanduser().resolve()
                 if not node_archive.is_file() or node_archive.is_symlink():
                     raise RuntimeError("local Node archive is not a regular file")
-            installed = NodeInstaller().install(node_archive, lock)
+            installed = NodeInstaller().install(
+                node_archive,
+                lock,
+                expected_archive_sha256=artifact.sha256 if artifact else None,
+            )
         except Exception as error:
             _skill_runtime_error(error)
             return
@@ -1475,7 +1499,7 @@ def forge_node_verify(
     skill_name: str = typer.Argument(..., help="Installed Skill containing the Node lock"),
     node_id: str = typer.Argument(..., help="Node ID from the Skill lock"),
 ):
-    """Verify an installed executable and receipt against its Skill lock."""
+    """Verify an installed Node artifact against its Skill lock."""
     from PhyAgentOS.skill_runtime.catalog import SkillCatalog
     from PhyAgentOS.skill_runtime.installer import NodeInstaller
 
@@ -1490,7 +1514,7 @@ def forge_node_verify(
         return
     console.print(
         f"[green]✓[/green] Forge node [cyan]{lock.node_id}[/cyan] "
-        f"{lock.artifact_id} SHA-256 verified"
+        f"{lock.artifact_id} verified against Skill lock"
     )
 
 # ============================================================================
