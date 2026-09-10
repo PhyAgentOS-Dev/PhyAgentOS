@@ -1,0 +1,574 @@
+# Unsigned schema-v3 static package index template for the robodojo Skill.
+#
+# Template-only fields (stripped by scripts/install_robodojo.py):
+#   bucket_key       object key inside TOS bucket phyagentos-resource-inner
+#   expected_sha256  archive sha256 of the published object; the helper re-downloads the
+#                    object, hashes it, and aborts on mismatch. `null` means the object is
+#                    not published yet (candidate).
+#
+# `paos skill install --index` requires `direct_download_url`, `sha256` and `size`; the
+# helper presigns `bucket_key`, measures size and sha256 itself and writes those three
+# fields into a generated index. Never feed this template to `--index` directly.
+#
+# Scope: benchmark and G05 policy node implementations are NOT part of the Skill bundle.
+# They are Forge Nodes built from framework/forge_runtime
+# (packages/nodes/benchmarks/robodojo, scripts/build_node_artifacts.py) and locked here by
+# node_digest. The published 0.1.0 objects are frozen pre-split snapshots and stay
+# untouched; the Skill entry below points at the rebuilt post-split candidate, which still
+# needs a new object key or version.
+schema_version: 3
+packages:
+- kind: skill_bundle
+  package_key: robodojo
+  artifact_id: robodojo
+  version: 0.1.0
+  platform: linux
+  arch: x86_64
+  description: Run the RoboDojo G05 benchmark and return its aggregate score.
+  dependencies:
+  - forge-runtime-0.1.0
+  - robodojo-endpoint-0.1.0
+  - robodojo-benchmark-0.1.0
+  bucket_key: skill-bundles/robodojo/0.1.0/robodojo-0.1.0.tar.gz
+  expected_sha256: null
+  inventory:
+  - path: README.md
+    sha256: 56381c08a3c46ce8e82bced526a29a7e331adb6a5e61a634b3826549d98087c9
+    size: 7350
+    category: file
+  - path: SKILL.md
+    sha256: 82aac86d637f634453ca94bbe61de112bff7dd4b63d5659db75ee29e0f1f3ec3
+    size: 7310
+    category: file
+  - path: docs/DELIVERY_0.1.0.md
+    sha256: d430abc97a74f974875b7bb59aba39eb92adc3a96b694c736d6aeccb31c93392
+    size: 10969
+    category: file
+  - path: profiles/g05/bench_endpoint.yaml
+    sha256: 9765a4828104c30b16ebe73f09ea0fafa57ba02c21dda75e7d48d9ef593459e4
+    size: 618
+    category: file
+  - path: profiles/g05/config.yaml
+    sha256: 3ccb45faf483fb08f1e7fbae534bf6e1cb2714223ab98b8ac4c8e6fd2e28372c
+    size: 740
+    category: file
+  - path: profiles/g05/dataflow.yaml
+    sha256: 050cc1df9a8e9db86cfa0053e0f0b53767daacf3224cc45c2f62b87285a4ae6a
+    size: 2957
+    category: file
+  - path: profiles/g05/env.template.sh
+    sha256: 7ae4e5bec354fe05eeae4f67e20ae91ac4d0b8901392c51f9777c3105d438e22
+    size: 2857
+    category: file
+  - path: profiles/g05/gateway.yaml
+    sha256: c5b49b11ee39d4df38c88514c9dc20f4e490efabec43d837bf2bbe8596ac4eb2
+    size: 6788
+    category: file
+  - path: scripts/check_bundle_inventory.py
+    sha256: 81218a85c909c0be95cd46f9d964a331f57570e7fa2db8fd3a3a26ce9c3d8bb3
+    size: 6330
+    category: file
+  - path: scripts/install_robodojo.py
+    sha256: 266eead1af8162a9c57f09f58da8a4a1efb1402571334b6d612ffc79caebf135
+    size: 10422
+    category: executable
+  - path: skill.yaml
+    sha256: 0c5bbdde16b91c10808ce49090486afe5caeb1ff63631ade484bfb03e43e95b8
+    size: 1635
+    category: file
+  backend_url: null
+  direct_download_url: null
+  archive:
+    format: tar.gz
+  todos: >-
+    Post-split candidate. The published robodojo-0.1.0.tar.gz (sha256
+    5c7806843e5cff16a8a407254ffe7736c9b1d5d13982bd1b82195c7e4f5bc907) still contains the
+    vendored nodes/ tree and profiles/g05/bin/; publish the rebuilt archive under a new
+    object key or version before pointing expected_sha256 at it. The inventory omits
+    docs/paos-forge-packages.template.yaml, which cannot hash itself.
+- kind: node_bundle
+  package_key: forge-runtime-0.1.0
+  artifact_id: forge-runtime-0.1.0
+  version: 0.1.0
+  platform: linux
+  arch: x86_64
+  install_root: ~/.PhyAgentOS/forge_runtime/nodes/forge_runtime
+  entrypoints:
+    gateway: bin/gateway
+  bucket_key: node-bundles/forge_runtime/0.1.0/forge-runtime-0.1.0-linux-x86_64.tar.gz
+  expected_sha256: c524ae7038775e48f2b0a6036e621913b35b327ad2c710f8a8e0c5cad9e7613b
+  node_digest: cee927eb587f3f958c1803086e59692f6f7ae373477b3cfd15118d01d76c408e
+  inventory:
+  - path: bin/gateway
+    sha256: cb134ebbc0f3ed0f804606dd07eda73fa74dad0a4f75f21fe135394fcd687339
+    size: 369
+    category: executable
+  - path: forge_gateway/__init__.py
+    sha256: 51035d2c0bb249b54edb472735e3bb20692df33dc41e99b8d0395e015bc74fe6
+    size: 58
+    category: file
+  - path: forge_gateway/__main__.py
+    sha256: 406b7188a391e7691b262bd978dbeeed3ac654264d533005b48cbad968543e37
+    size: 61
+    category: file
+  - path: forge_gateway/adapters/__init__.py
+    sha256: 779761d9503c1887b2b5d2afcf9642b9785248ceed65339ca422f86240caeeef
+    size: 41
+    category: file
+  - path: forge_gateway/adapters/dora_adapter.py
+    sha256: 237fc682eb211dcb20c0c0004e53e71844430eaf3e54c92b8ef72aa295c373dc
+    size: 11226
+    category: file
+  - path: forge_gateway/adapters/dora_runtime.py
+    sha256: 92c8afccfd8b4bbb3177f450f8b351bfbc17883dfaca5c5e2400bfcedfe2f8e1
+    size: 8145
+    category: file
+  - path: forge_gateway/adapters/http_app.py
+    sha256: f2aef6d34b20131e558415e5a778f19a067d54779cba88b5c47f3111190a5ce9
+    size: 1975
+    category: file
+  - path: forge_gateway/adapters/manifest_loader.py
+    sha256: 4897749c2db9455bef76282550d7d84037aac2c34401cf0a48eddb6242469d40
+    size: 3385
+    category: file
+  - path: forge_gateway/adapters/state_files.py
+    sha256: d4e97037f3a7183f700716c425c89daaf77ea5de284d5b679d9a9843ef3f557e
+    size: 2275
+    category: file
+  - path: forge_gateway/adapters/tool_dora.py
+    sha256: 8b4baa800f5d952e19a38120d34c403f66737e8272c074cb9f732bb0d3be9643
+    size: 4923
+    category: file
+  - path: forge_gateway/adapters/websocket.py
+    sha256: 1c0485bc225f34720177538bc53a6b8bc793dc6026bc89f6acba8d9f7e786b9b
+    size: 755
+    category: file
+  - path: forge_gateway/application.py
+    sha256: 55440507745ef30385699e73672f11d30a3448a6bd77dfbf35120ba4f819b8c2
+    size: 22323
+    category: file
+  - path: forge_gateway/cli.py
+    sha256: cb75a68e022c150b9c27c45c1697f0f79b3f4b98a7cc79f29f10da71bc23320e
+    size: 5049
+    category: file
+  - path: forge_gateway/config.py
+    sha256: a9e9e7885771b58e743b6661a9aaeb22e040d4c1d7f2deb9f1e99708a0bf719e
+    size: 28171
+    category: file
+  - path: forge_gateway/controllers/__init__.py
+    sha256: d55994c06ed732fec0708abd5cc0ddd75507ff4bbfb6203fd10d68690da3113b
+    size: 38
+    category: file
+  - path: forge_gateway/controllers/agent_controller.py
+    sha256: 1504f61d37ba87a89e68f513caa564e973a1659c8dd0f821c806c212f0bb72f6
+    size: 1947
+    category: file
+  - path: forge_gateway/controllers/playback_controller.py
+    sha256: 0fbc9368cfac7f30da67c77f7907806ac77c69e46098efb55e4615259cf1eee8
+    size: 1543
+    category: file
+  - path: forge_gateway/controllers/policy_controller.py
+    sha256: fd313e13690c7efe254795f36055ef3fdea45f6a8aab4590350753f67df00bbf
+    size: 1224
+    category: file
+  - path: forge_gateway/controllers/record_controller.py
+    sha256: c001662bbcbfc90eda2c751a808b443f66f3b418fa858cd52ad534847029ea6e
+    size: 2372
+    category: file
+  - path: forge_gateway/controllers/runtime_controller.py
+    sha256: a0ae571e36ca8ea6605aab32ce963ae1ce3c3e8170c72f03f3e77ab4ee9ca933
+    size: 3797
+    category: file
+  - path: forge_gateway/controllers/tool_controller.py
+    sha256: a95c9f0fe1f97777f99a6ecad904af68affc98fdc9d8ab63a497c6047ae5ebec
+    size: 16693
+    category: file
+  - path: forge_gateway/controllers/utils.py
+    sha256: ee72b155211db2f246d3849a7d1c80f1c3069db8826058008cef5ff9f9ee6687
+    size: 1015
+    category: file
+  - path: forge_gateway/controllers/websocket_controller.py
+    sha256: 7af3820b05e5edf997e6a8e5ff5f18a77076bf01b2c0466a8a17d6627092bdc8
+    size: 4641
+    category: file
+  - path: forge_gateway/domain/__init__.py
+    sha256: 729c6c3a6499d01f8b62640144680c26b7e80dec91b18847329a780f2fe26c81
+    size: 37
+    category: file
+  - path: forge_gateway/domain/action_invocations.py
+    sha256: 44d3626ef598184855c5df9d0625ffe617d285e09d20881cf7aebf767aeb3c6f
+    size: 15424
+    category: file
+  - path: forge_gateway/domain/action_manifest.py
+    sha256: c8a6849a35dd1fae860744c30fe9911066c07973f0b97128d533ef3942570b95
+    size: 4410
+    category: file
+  - path: forge_gateway/domain/commands.py
+    sha256: a76c576172697aa761f6760be1a7dce2ec1bd9817f4e5a95766b89f8d0ab6aa3
+    size: 1815
+    category: file
+  - path: forge_gateway/domain/node_status.py
+    sha256: 736cdb41ff11f867c7064bf6cc4654184cbfcefa58a56b770eb0c546d8054a80
+    size: 545
+    category: file
+  - path: forge_gateway/domain/sessions.py
+    sha256: 68a66d5b6d4114ba876a3942c00abf9ac7fa8061686055c73281961c2dadba21
+    size: 1251
+    category: file
+  - path: forge_gateway/domain/tool_catalog.py
+    sha256: 3af1304e13ef6b7663da6eeea6120e5677957ae5b68505bcd6d6d6de4369a70f
+    size: 7082
+    category: file
+  - path: forge_gateway/domain/tool_directory.py
+    sha256: f698e9e0456df2877ac57d80d53fe628b577a474412d6992ba45b2a7ae31ca07
+    size: 17271
+    category: file
+  - path: forge_gateway/resources/actions/piper/sam3.md
+    sha256: 07509d31d23d68944188eeb1674047492b07ff2569354e298bd8bfc4d64f6452
+    size: 1860
+    category: file
+  - path: forge_gateway/resources/actions/piper/sam3_policy_core.md
+    sha256: b186b3009ccd0eb2dccd89f6710f6513922d6ae6bdbf7005653427f9890055d6
+    size: 4605
+    category: file
+  - path: forge_gateway/resources/static/app.js
+    sha256: 7fe0f8a181f90a14da22c8f5272c21531f1e9d58edda9ddcf2e78d09b48b162d
+    size: 41895
+    category: file
+  - path: forge_gateway/resources/static/index.html
+    sha256: d84488345acd381fe31e28e1c4263341fad0ab66c831d0bc8c14fdf14cddb9d5
+    size: 10519
+    category: file
+  - path: forge_gateway/resources/static/styles.css
+    sha256: a2d45832b254a98cc8726a167b76001ffdd78b588503e7ff38b28028a4987432
+    size: 21987
+    category: file
+  - path: forge_gateway/services/__init__.py
+    sha256: 954a57e6961f9cf4eaab070cdd969c46c3c48ebbdd71a29647814cdcb6ddd1ba
+    size: 24
+    category: file
+  - path: forge_gateway/services/action_registry.py
+    sha256: a1c6ad1fae35adf0fb91938f332a3b6f7d22e567200988b4c76b3e6bb9c6f70b
+    size: 1298
+    category: file
+  - path: forge_gateway/services/agent_service.py
+    sha256: 41f52c0625dd1938e9023d83068afcc6e89c8db4877efab1fe141a1fb5a709b8
+    size: 14885
+    category: file
+  - path: forge_gateway/services/capability_service.py
+    sha256: befd539fcc4ae96bc98109809e5a387340d9aaab98576483767cf4cb47fa183a
+    size: 1712
+    category: file
+  - path: forge_gateway/services/command_service.py
+    sha256: ff520c966f716e44e915864a3276ae3c5dc38cc9dab046f37d566f71945b75a4
+    size: 4192
+    category: file
+  - path: forge_gateway/services/image_service.py
+    sha256: c8a9a031f7cdaebfd4141f8ab17b8c88d5a5e9b10aec258928722bdbb02713df
+    size: 6706
+    category: file
+  - path: forge_gateway/services/runtime_service.py
+    sha256: 08c8676c470af9c4bd01c722999ce5f8c49f73fff5d82f61f394821245d9bb43
+    size: 25318
+    category: file
+  - path: forge_gateway/services/tool_gateway_service.py
+    sha256: bb4a64ad0a6d23e79c1e8bf6dae99a7c4adb5ce3ffad36ad9ec95a7cb8d8982a
+    size: 90822
+    category: file
+  - path: forge_tool/__init__.py
+    sha256: 06c9c6b830c3771046a14b8d2f4b0dfa7d0b287e3c41cc3ae6ba4f4054dbac91
+    size: 5580
+    category: file
+  - path: forge_tool/_tool_message.py
+    sha256: afd99c1061cc9cfaa35386c2c954aafa00ccb22c5eac42222e5ffb1dcbf70e50
+    size: 14854
+    category: file
+  - path: forge_tool/dora.py
+    sha256: 3612f8bc27288898881f228405ac797058d11e20e48f93c16c94274d02bbb2b1
+    size: 16642
+    category: file
+  - path: forge_tool/endpoint/__init__.py
+    sha256: 2a46324051783e729e508536d43066414dbe866865e2fc4c37d44c8aa2b46f46
+    size: 1603
+    category: file
+  - path: forge_tool/endpoint/exceptions.py
+    sha256: 2dd2d6fe793a5308979d623a4e2e9f90de7861cef365091249526f16646e1408
+    size: 724
+    category: file
+  - path: forge_tool/endpoint/models.py
+    sha256: 5d6b0db2559b0cc513dfb3e592e995377b64ebbb90959a29ee5bb84492c610bc
+    size: 20673
+    category: file
+  - path: forge_tool/endpoint/protocol.py
+    sha256: 5243819dc9eadd561c719fea357c97dba1581eacf29de1bd99613923fbe93329
+    size: 2981
+    category: file
+  - path: forge_tool/handler.py
+    sha256: 59024c7edfb8be659d773293269a0826c8010ee1acc7f4bf39c0b453369f1d97
+    size: 34074
+    category: file
+  - path: forge_tool/py.typed
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    size: 0
+    category: file
+  - path: forge_tool/wire/__init__.py
+    sha256: 033d32a508ea857433bb9b4f9f75e4aa5d5ea57b0092b1f182c9c0500bdd0501
+    size: 3960
+    category: file
+  - path: forge_tool/wire/codec.py
+    sha256: 4e80832a524355478ade051ac6dd1931ff374fea4514c29075ba49fafd53bd7d
+    size: 7820
+    category: file
+  - path: forge_tool/wire/descriptor.py
+    sha256: f65b1dd4f0b7689d5b833bc5894d4cf2096c254ade99b49afb281ee4e1b1f506
+    size: 6317
+    category: file
+  - path: forge_tool/wire/envelope.py
+    sha256: 18c9fb9b905238d0a915431f9accc14ff0107262cc3cfc31648251f4d3a8e0e6
+    size: 9584
+    category: file
+  - path: forge_tool/wire/errors.py
+    sha256: 96c938ec1f1084d7128bdeebf3f782c68899af6f4298cb685df6549873a2fd67
+    size: 507
+    category: file
+  - path: forge_tool/wire/factories.py
+    sha256: 24da5817bab5c97316f040b8456170d8eedee25875447cb4831e277d43898f8e
+    size: 14031
+    category: file
+  - path: forge_tool/wire/messages.py
+    sha256: 831862cb31a2f3d30562c407891bf71a1e5266ff22b06574662ddaea69356b41
+    size: 19549
+    category: file
+  backend_url: null
+  direct_download_url: null
+  archive:
+    format: tar.gz
+  todos: null
+  node_id: forge_runtime
+- kind: node_bundle
+  package_key: robodojo-endpoint-0.1.0
+  artifact_id: robodojo-endpoint-0.1.0
+  version: 0.1.0
+  platform: linux
+  arch: x86_64
+  install_root: ~/.PhyAgentOS/forge_runtime/nodes/robodojo_endpoint
+  entrypoints:
+    bench_endpoint: bin/bench_endpoint
+  bucket_key: node-bundles/robodojo_endpoint/0.1.0/robodojo-endpoint-0.1.0-linux-x86_64.tar.gz
+  expected_sha256: 80b7076b04b8abf21712f6f3b11bd9523fde91d5e49bbe3ed202bf17f238e46c
+  node_digest: b9a66fb07b04ee1f76bb8221f68f96b35d1f1ce136d3d6cf967cb7a34da8e159
+  inventory:
+  - path: bench_endpoint/__init__.py
+    sha256: 25a0bc14f808edadbfb636629ab28412009addd8aae96ec7abbf9031139524d2
+    size: 366
+    category: file
+  - path: bench_endpoint/__main__.py
+    sha256: 6aa1969dbad95243ba9dac5d9792e7f3ec4359f0ce27eed96458406dfb6f774f
+    size: 564
+    category: file
+  - path: bench_endpoint/config.py
+    sha256: 8f43dac26ac9401d5d7f1bd47ac36f037506b40126e9b2ec007dd4e2a46432e4
+    size: 1457
+    category: file
+  - path: bench_endpoint/descriptor.py
+    sha256: 4b0e1671bfdd9439a84da1acede00cdc9df36a804660b583ccd206d38f069469
+    size: 2802
+    category: file
+  - path: bench_endpoint/endpoint_lease.py
+    sha256: 0c4dcaf11b30e9ec17a5ef87ad958177e121455c65e18f94f4f1f4f24945e2d4
+    size: 2600
+    category: file
+  - path: bench_endpoint/endpoints.py
+    sha256: 88f103821a6f5bb65e2412bf3f4908b50029607f2ff5b40527073deeb25f8c94
+    size: 4851
+    category: file
+  - path: bench_endpoint/invocations.py
+    sha256: c086bfb19ad4e37ce638ca7fa790d9b2ac383b2ab7a16cc6f9354973b70dd04f
+    size: 7004
+    category: file
+  - path: bench_endpoint/peer.py
+    sha256: 46579c0806e9577594231ec95e3885e6d24f7852119c70b90dea910de1cba723
+    size: 9187
+    category: file
+  - path: bench_endpoint/runner.py
+    sha256: bb45ae890790e578d3e0b2483325383bc3a4452ea75e151ce8cbd56177c74c29
+    size: 5664
+    category: file
+  - path: bench_endpoint/wire.py
+    sha256: b7f1df988ca1373bbbf4d07aee79b230db7e86950a7b1efc8f5bf5a1d1c1a5fd
+    size: 3812
+    category: file
+  - path: bin/bench_endpoint
+    sha256: 37cabb6b35214691fcbb66c2354bdf965be3ca599a9004af6750853340459ba0
+    size: 373
+    category: executable
+  - path: forge_tool/__init__.py
+    sha256: 06c9c6b830c3771046a14b8d2f4b0dfa7d0b287e3c41cc3ae6ba4f4054dbac91
+    size: 5580
+    category: file
+  - path: forge_tool/_tool_message.py
+    sha256: afd99c1061cc9cfaa35386c2c954aafa00ccb22c5eac42222e5ffb1dcbf70e50
+    size: 14854
+    category: file
+  - path: forge_tool/dora.py
+    sha256: 3612f8bc27288898881f228405ac797058d11e20e48f93c16c94274d02bbb2b1
+    size: 16642
+    category: file
+  - path: forge_tool/endpoint/__init__.py
+    sha256: 2a46324051783e729e508536d43066414dbe866865e2fc4c37d44c8aa2b46f46
+    size: 1603
+    category: file
+  - path: forge_tool/endpoint/exceptions.py
+    sha256: 2dd2d6fe793a5308979d623a4e2e9f90de7861cef365091249526f16646e1408
+    size: 724
+    category: file
+  - path: forge_tool/endpoint/models.py
+    sha256: 5d6b0db2559b0cc513dfb3e592e995377b64ebbb90959a29ee5bb84492c610bc
+    size: 20673
+    category: file
+  - path: forge_tool/endpoint/protocol.py
+    sha256: 5243819dc9eadd561c719fea357c97dba1581eacf29de1bd99613923fbe93329
+    size: 2981
+    category: file
+  - path: forge_tool/handler.py
+    sha256: 59024c7edfb8be659d773293269a0826c8010ee1acc7f4bf39c0b453369f1d97
+    size: 34074
+    category: file
+  - path: forge_tool/py.typed
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    size: 0
+    category: file
+  - path: forge_tool/wire/__init__.py
+    sha256: 033d32a508ea857433bb9b4f9f75e4aa5d5ea57b0092b1f182c9c0500bdd0501
+    size: 3960
+    category: file
+  - path: forge_tool/wire/codec.py
+    sha256: 4e80832a524355478ade051ac6dd1931ff374fea4514c29075ba49fafd53bd7d
+    size: 7820
+    category: file
+  - path: forge_tool/wire/descriptor.py
+    sha256: f65b1dd4f0b7689d5b833bc5894d4cf2096c254ade99b49afb281ee4e1b1f506
+    size: 6317
+    category: file
+  - path: forge_tool/wire/envelope.py
+    sha256: 18c9fb9b905238d0a915431f9accc14ff0107262cc3cfc31648251f4d3a8e0e6
+    size: 9584
+    category: file
+  - path: forge_tool/wire/errors.py
+    sha256: 96c938ec1f1084d7128bdeebf3f782c68899af6f4298cb685df6549873a2fd67
+    size: 507
+    category: file
+  - path: forge_tool/wire/factories.py
+    sha256: 24da5817bab5c97316f040b8456170d8eedee25875447cb4831e277d43898f8e
+    size: 14031
+    category: file
+  - path: forge_tool/wire/messages.py
+    sha256: 831862cb31a2f3d30562c407891bf71a1e5266ff22b06574662ddaea69356b41
+    size: 19549
+    category: file
+  backend_url: null
+  direct_download_url: null
+  archive:
+    format: tar.gz
+  todos: null
+  node_id: robodojo_endpoint
+- kind: node_bundle
+  package_key: robodojo-benchmark-0.1.0
+  artifact_id: robodojo-benchmark-0.1.0
+  version: 0.1.0
+  platform: linux
+  arch: x86_64
+  install_root: ~/.PhyAgentOS/forge_runtime/nodes/robodojo_benchmark
+  entrypoints:
+    robodojo_benchmark: bin/robodojo_benchmark
+    robodojo_policy: bin/robodojo_policy
+  bucket_key: node-bundles/robodojo_benchmark/0.1.0/robodojo-benchmark-0.1.0-linux-x86_64.tar.gz
+  expected_sha256: null
+  node_digest: e48cf4e838ba73512ac1eb0c144ea17ea177bb56ad41e524c8332f9a38c19ff2
+  inventory:
+  - path: bin/robodojo_benchmark
+    sha256: 6a4e075963c837a98d05f755f6d52a1837e79450b8a673e3430a98a24aa969fb
+    size: 1092
+    category: executable
+  - path: bin/robodojo_policy
+    sha256: 403261c5274b0c545fc97cd85ad5df698161f9d83fd233b68be3e157c61c77bb
+    size: 944
+    category: executable
+  - path: robodojo/.gitignore
+    sha256: 78902f790bbf2718606af332dfb97847652c5b38446c13607c1b27020926a29c
+    size: 124
+    category: file
+  - path: robodojo/README.md
+    sha256: 25c80e046c6aa6e749943370e6045a5861e1cc74250aa4c07aac6effa248a3fc
+    size: 5302
+    category: file
+  - path: robodojo/_core/__init__.py
+    sha256: ef1a5aa477c1cb5b1eb663e799fd08f09329c952b7f9dd41643bfe60e479db25
+    size: 53
+    category: file
+  - path: robodojo/_core/adapter.py
+    sha256: 93240ca820d7d356ae720ae41d5d31216dcc2e6bd7b3fa1230b42b51b8563237
+    size: 4433
+    category: file
+  - path: robodojo/_core/config.py
+    sha256: 9bb75d07bd64e7c26283af5da73fa6c7630079292ff7d6036b84afe514d5864c
+    size: 5687
+    category: file
+  - path: robodojo/_core/node.py
+    sha256: 031142bce97f56876c0e0ab1921991b171b8852a4a0d0b64cedd93edd8b65fb1
+    size: 12342
+    category: file
+  - path: robodojo/_core/result.py
+    sha256: 88ee7589b46c43a8365c4d63eec0ad5295e5fa7b168d0746b2ae2bd6327d42b9
+    size: 5173
+    category: file
+  - path: robodojo/_core/runner.py
+    sha256: f2a6482e50b0535df17914abd83b2958443032156bcfb71189fb5d2af4438bea
+    size: 18288
+    category: file
+  - path: robodojo/_core/session.py
+    sha256: 21c43500383464572873435db1d67403c8209e92b6d429960d34f20db7796cdc
+    size: 10534
+    category: file
+  - path: robodojo/_core/video.py
+    sha256: 0343107afc90108761ba775c1a815bff0cccb24482d5c563a9774d9ea495ba2f
+    size: 3261
+    category: file
+  - path: robodojo/adapters/__init__.py
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    size: 0
+    category: file
+  - path: robodojo/adapters/robodojo_adapter.py
+    sha256: 6d4f119784d6897a041c52c511d3765e57e022e9961ae2efa48869eeb34abd48
+    size: 28254
+    category: file
+  - path: robodojo/config.example.yaml
+    sha256: 41f37e10d76eb59bdb03c7a76e7dd0e51d036d9689720017f3f36860949023d2
+    size: 1313
+    category: file
+  - path: robodojo/config.py
+    sha256: 5a745ceff770876a87c727a069e901de983c2c71fb745740c92744b072f67be7
+    size: 3069
+    category: file
+  - path: robodojo/dataflow.example.yaml
+    sha256: 90ee1299028caef52d0dd2a275a26c8154adbde8ffb23923c0ba57c3f5d6cf2d
+    size: 2504
+    category: file
+  - path: robodojo/main.py
+    sha256: 918ba94b61c7fdba77e20ff80229d528d3f35edf07e359c1a6826ddaaef8175b
+    size: 4280
+    category: file
+  - path: robodojo/policy_node.py
+    sha256: 310569e1f4315119db126bbe69a2c10b1ea66d58e7435d94391d7311bb9857f0
+    size: 14638
+    category: file
+  - path: robodojo/pyproject.toml
+    sha256: e53220f19b584c83a38fa9f205df0f782ac1d7c6663d6f74545faf677ad9078f
+    size: 607
+    category: file
+  backend_url: null
+  direct_download_url: null
+  archive:
+    format: tar.gz
+  todos: "Candidate: built from framework/forge_runtime packages/nodes/benchmarks/robodojo; not uploaded yet."
+  node_id: robodojo_benchmark
