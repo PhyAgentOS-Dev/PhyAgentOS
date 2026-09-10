@@ -1,0 +1,82 @@
+# 完整链路: gateway -> bench_endpoint -> robodojo_benchmark -> policy(G05) -> Isaac Sim
+# 职责边界: benchmark/policy 的实现由 forge_runtime 的 Node 包维护, 本 Skill 只带
+# 描述、清单、g05 profile、dataflow、安装脚本与文档。四个 node 一律走已安装 Node 的
+# 入口 (${FORGE_RUNTIME_BIN}/<entrypoint>), Skill 内不再存放节点源码或 launcher。
+# 运行环境经 required_environment 由宿主提供, 并在 dora start 时以 ${VAR} 展开写入
+# 各 node env。
+nodes:
+  - id: gateway
+    path: ${FORGE_RUNTIME_BIN}/gateway
+    args: --config ${PAOS_SKILL_ROOT}/profiles/g05/gateway.yaml
+    env:
+      FORGE_GATEWAY_PYTHON: ${FORGE_GATEWAY_PYTHON}
+    inputs:
+      tick: dora/timer/millis/50
+      bench_tool_in: bench_endpoint/tool_out
+    outputs:
+      - tool_response
+      - bench_tool_out
+  - id: bench_endpoint
+    path: ${FORGE_RUNTIME_BIN}/bench_endpoint
+    args: --config ${PAOS_SKILL_ROOT}/profiles/g05/bench_endpoint.yaml
+    env:
+      BENCH_ENDPOINT_PYTHON: ${BENCH_ENDPOINT_PYTHON}
+    inputs:
+      tick: dora/timer/millis/50
+      tool_in: gateway/bench_tool_out
+      bench_report: robodojo_benchmark/bench_report
+    outputs:
+      - tool_out
+      - bench_cmd
+  - id: robodojo_benchmark
+    path: ${FORGE_RUNTIME_BIN}/robodojo_benchmark
+    env:
+      BENCHMARK_CONFIG: ${PAOS_SKILL_ROOT}/profiles/g05/config.yaml
+      PATH: ${PATH}
+      ROBODOJO_ENV: ${ROBODOJO_ENV}
+      ROBODOJO_ROOT: ${ROBODOJO_ROOT}
+      ROBODOJO_CACHE_ROOT: ${ROBODOJO_CACHE_ROOT}
+      ROBODOJO_DEVICE_ID: ${ROBODOJO_DEVICE_ID}
+      ROBODOJO_RESULT_DIR: ${ROBODOJO_RESULT_DIR}
+      CUDA_HOME: ${CUDA_HOME}
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}
+    inputs:
+      action: policy/action
+      tick: dora/timer/millis/50
+      bench_cmd:
+        source: bench_endpoint/bench_cmd
+        queue_size: 16
+    outputs:
+      - proprio_state
+      - image/head
+      - image/left_wrist
+      - image/right_wrist
+      - policy_command
+      - benchmark_status
+      - benchmark_result
+      - bench_report
+  - id: policy
+    path: ${FORGE_RUNTIME_BIN}/robodojo_policy
+    env:
+      ROBODOJO_ENV: ${ROBODOJO_ENV}
+      XPOLICYLAB_ROOT: ${XPOLICYLAB_ROOT}
+      POLICY_NAME: ${POLICY_NAME}
+      ENV_CFG_TYPE: ${ENV_CFG_TYPE}
+      ACTION_TYPE: ${ACTION_TYPE}
+      TASK_NAME: ${TASK_NAME}
+      G05_CKPT_PATH: ${G05_CKPT_PATH}
+      G05_PROCESSOR_PATH: ${G05_PROCESSOR_PATH}
+      CUDA_HOME: ${CUDA_HOME}
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES}
+      ROBODOJO_CACHE_ROOT: ${ROBODOJO_CACHE_ROOT}
+    inputs:
+      tick: dora/timer/millis/20
+      policy_command:
+        source: robodojo_benchmark/policy_command
+        queue_size: 32
+      proprio_state: robodojo_benchmark/proprio_state
+      image/head: robodojo_benchmark/image/head
+      image/left_wrist: robodojo_benchmark/image/left_wrist
+      image/right_wrist: robodojo_benchmark/image/right_wrist
+    outputs:
+      - action

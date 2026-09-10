@@ -1,0 +1,29 @@
+# benchmark 节点的服务模式配置(robodojo g05 profile) - 可移植版本。
+# result_dir / record_dir / device_id 允许被环境变量覆盖(见 main.py)。
+benchmark: robodojo
+suite: put_bottles_into_dustbin
+
+env_cfg_type: arx_x5
+device_id: 0          # 可被 ROBODOJO_DEVICE_ID 覆盖
+
+serve: true
+init_states_per_task: 1
+num_runs: 1
+seed: 0
+max_steps: 700
+
+max_total_episodes: 20
+max_max_steps: 2000
+
+action_type: joint
+policy_id: G05
+additional_info: forge
+
+camera_map:
+  image/head: cam_head
+  image/left_wrist: cam_left_wrist
+  image/right_wrist: cam_right_wrist
+
+# 默认相对路径(解析到 bundle 内源码目录); 正式运行请用环境变量覆盖。
+record_dir: results/robodojo/videos
+result_dir: results/robodojo

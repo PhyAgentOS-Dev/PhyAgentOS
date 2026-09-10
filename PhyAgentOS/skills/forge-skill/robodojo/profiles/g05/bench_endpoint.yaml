@@ -1,0 +1,13 @@
+# bench_endpoint 节点配置（g05 profile，与 build_tower 相同）。
+# 连续多久收不到 bench_report 就把在跑的 invocation 判成 unknown。
+#
+# ⚠️ 必须大于 benchmark 节点一次最长的阻塞调用（episode 启动时 reset_episode 要
+# 加载 Isaac Sim 场景，整个循环阻塞几十秒），不是心跳周期的几倍。太小会把正常的
+# 场景加载误判成掉线 → invocation 被写成终态 unknown，然后真结果到达时被丢弃，
+# 仿真器还在烧 GPU。
+heartbeat_timeout_s: 180.0
+
+# 保留多少条历史 invocation 供对账。
+retention: 8
+
+log_level: INFO

@@ -1,0 +1,61 @@
+manifest_version: 2
+name: robodojo
+version: 0.1.0
+description: Run the RoboDojo G05 benchmark and return its aggregate score.
+skill_document: SKILL.md
+gateway_url: http://127.0.0.1:19011
+required_tools:
+- bench.describe
+- bench.run
+profiles:
+  g05:
+    dataflow: profiles/g05/dataflow.yaml
+    required_binaries:
+    - gateway
+    - bench_endpoint
+    - robodojo_benchmark
+    - robodojo_policy
+    required_assets:
+    - profiles/g05/gateway.yaml
+    - profiles/g05/bench_endpoint.yaml
+    - profiles/g05/config.yaml
+    required_environment:
+    - FORGE_GATEWAY_PYTHON
+    - BENCH_ENDPOINT_PYTHON
+    - ROBODOJO_ENV
+    - ROBODOJO_ROOT
+    - XPOLICYLAB_ROOT
+    - G05_CKPT_PATH
+    - G05_PROCESSOR_PATH
+    - CUDA_HOME
+    - CUDA_VISIBLE_DEVICES
+    - ROBODOJO_CACHE_ROOT
+    - ROBODOJO_DEVICE_ID
+    - ROBODOJO_RESULT_DIR
+    environment:
+      POLICY_NAME: G05
+      ENV_CFG_TYPE: arx_x5
+      ACTION_TYPE: joint
+      PYTHONNOUSERSITE: '1'
+      OMNI_KIT_ACCEPT_EULA: 'YES'
+artifacts:
+  resolver: registry
+  nodes:
+    forge_runtime:
+      artifact_id: forge-runtime-0.1.0
+      version: 0.1.0
+      platform: linux
+      arch: x86_64
+      digest: cee927eb587f3f958c1803086e59692f6f7ae373477b3cfd15118d01d76c408e
+    robodojo_endpoint:
+      artifact_id: robodojo-endpoint-0.1.0
+      version: 0.1.0
+      platform: linux
+      arch: x86_64
+      digest: b9a66fb07b04ee1f76bb8221f68f96b35d1f1ce136d3d6cf967cb7a34da8e159
+    robodojo_benchmark:
+      artifact_id: robodojo-benchmark-0.1.0
+      version: 0.1.0
+      platform: linux
+      arch: x86_64
+      digest: e48cf4e838ba73512ac1eb0c144ea17ea177bb56ad41e524c8332f9a38c19ff2

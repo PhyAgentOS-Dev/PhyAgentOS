@@ -1,0 +1,188 @@
+# Forge Gateway 配置：把 bench_endpoint 暴露成两个 Tool。
+#
+# 与 build_tower 的区别：port 改 19011，避免端口冲突。specs / providers 的
+# 结构性约定完全相同（endpoint_id、input_id/output_id 与 dataflow 通道一一对应，
+# 对不上会静默失败，tool 永远 ready:false）。
+
+host: 127.0.0.1
+port: 19011
+
+# benchmark 场景没有关节流也没有图像流经过网关，两个都留空。
+joint_order: []
+image_input_ids: []
+
+readiness:
+  require_proprio_state: false
+  require_images: false
+
+agent:
+  enabled: false
+
+tools:
+  enabled: true
+  lease_ttl_ms: 3000
+  # ⚠️ 每次调用的 deadline，Query 与 Action 共用一个。按「一批最长跑多久」来定，
+  # 上限由 config.yaml 的 max_total_episodes 兜着。
+  invoke_timeout_ms: 3600000
+  request_input_id: tool_request
+  response_output_id: tool_response
+
+  specs:
+    - tool_id: bench.describe
+      implementation_id: robodojo.benchmark
+      endpoint_id: bench.runner
+      operation: describe
+      semantics: query
+      description: >-
+        Return the live benchmark inventory: available tasks, per-task init state
+        counts, default parameters, and episode budget limits. Call this before
+        bench.run; never assume task ids or counts.
+      input_schema:
+        type: object
+        additionalProperties: false
+        properties: {}
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - benchmark
+          - suite
+          - policy_id
+          - num_tasks
+          - tasks
+          - defaults
+          - limits
+        properties:
+          benchmark: {type: string}
+          suite: {type: string}
+          policy_id: {type: string}
+          env_cfg_type: {type: string}
+          action_type: {type: string}
+          num_tasks: {type: integer, minimum: 1}
+          tasks:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [task_id, num_init_states]
+              properties:
+                task_id: {type: integer, minimum: 0}
+                name: {type: string}
+                language: {type: string}
+                num_init_states: {type: integer, minimum: 1}
+          joint_names:
+            type: array
+            items: {type: string}
+          camera_ids:
+            type: array
+            items: {type: string}
+          defaults:
+            type: object
+            additionalProperties: false
+            required: [num_runs, seed, max_steps]
+            properties:
+              num_runs: {type: integer, minimum: 1}
+              seed: {type: integer}
+              max_steps: {type: integer, minimum: 1}
+          limits:
+            type: object
+            additionalProperties: false
+            properties:
+              max_total_episodes: {type: integer, minimum: 0}
+              max_max_steps: {type: integer, minimum: 0}
+      readiness: []
+
+    - tool_id: bench.run
+      implementation_id: robodojo.benchmark
+      endpoint_id: bench.runner
+      operation: run
+      semantics: action
+      description: >-
+        Run one benchmark batch (task_ids x init_state_ids x num_runs) and return
+        the aggregate score. Long running: accepted immediately, poll status and
+        result. Policy weights, suite, and device (G05 / put_bottles_into_dustbin)
+        are fixed by the profile and are not selectable here.
+      input_schema:
+        type: object
+        additionalProperties: false
+        required: [task_ids, init_state_ids, num_runs, seed, max_steps]
+        properties:
+          task_ids:
+            description: Task ids from bench.describe; null means every task.
+            oneOf:
+              - type: "null"
+              - type: array
+                minItems: 1
+                items: {type: integer, minimum: 0}
+          init_state_ids:
+            description: Init state ids; null means every init state shared by all selected tasks.
+            oneOf:
+              - type: "null"
+              - type: array
+                minItems: 1
+                items: {type: integer, minimum: 0}
+          num_runs: {type: integer, minimum: 1}
+          seed: {type: integer}
+          max_steps:
+            description: >-
+              Hard cap on control steps. The episode is terminated as timed_out if
+              this many steps are reached before the environment terminates. For
+              RoboDojo the task's native step_lim defines its normal end (success /
+              partial / failed); set this to at least the task horizon (from
+              bench.describe defaults) to allow completion, or lower to force an
+              explicit step-limit stop. Both max_steps and num_steps count control
+              steps (policy actions).
+            type: integer
+            minimum: 1
+      output_schema:
+        type: object
+        additionalProperties: false
+        required:
+          - status
+          - success_rate
+          - successes
+          - total_episodes
+          - completed_episodes
+          - result_path
+        properties:
+          status: {enum: [succeeded, failed, cancelled]}
+          primary_metric:
+            type: object
+            properties:
+              name: {type: string}
+              value: {type: [number, "null"]}
+          success_rate: {type: [number, "null"], minimum: 0, maximum: 1}
+          successes: {type: integer, minimum: 0}
+          total_episodes: {type: integer, minimum: 0}
+          completed_episodes: {type: integer, minimum: 0}
+          valid_episodes: {type: integer, minimum: 0}
+          timed_out_episodes: {type: integer, minimum: 0}
+          num_steps: {type: integer, minimum: 0}
+          mean_policy_latency_ms: {type: [number, "null"]}
+          elapsed_s: {type: [number, "null"]}
+          obs_republished:
+            description: Non-zero means observations were re-sent; the score is still valid.
+            type: [integer, "null"]
+          result_path: {type: [string, "null"]}
+          episodes:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              properties:
+                task_id: {type: integer}
+                init_state_id: {type: integer}
+                run_index: {type: integer}
+                seed: {type: [integer, "null"]}
+                success: {type: boolean}
+                termination: {type: string}
+                error_code: {type: [string, "null"]}
+          episodes_truncated:
+            description: True when the batch was too large to inline; read result_path instead.
+            type: boolean
+      readiness: []
+
+  providers:
+    - endpoint_id: bench.runner
+      input_id: bench_tool_in
+      output_id: bench_tool_out
