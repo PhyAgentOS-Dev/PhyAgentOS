@@ -1433,7 +1433,7 @@ def forge_node_install(
         help="Independently obtained local Node .tar.gz instead of a Registry download",
     ),
 ):
-    """Download the exact single-executable archive pinned by a Skill lock."""
+    """Download the exact node archive pinned by a Skill lock."""
     from PhyAgentOS.skill_runtime.catalog import SkillCatalog
     from PhyAgentOS.skill_runtime.installer import NodeInstaller
     from PhyAgentOS.skill_runtime.registry import DownloadCache, RegistryClient

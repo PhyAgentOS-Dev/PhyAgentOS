@@ -89,8 +89,14 @@ class ArchiveValidator:
 
     manifest_names = ("archive-manifest.json", ".paos-manifest.json")
 
-    def __init__(self, limits: ArchiveLimits | None = None) -> None:
+    def __init__(
+        self,
+        limits: ArchiveLimits | None = None,
+        *,
+        allow_internal_links: bool = False,
+    ) -> None:
         self.limits = limits or ArchiveLimits()
+        self.allow_internal_links = allow_internal_links
 
     def extract(
         self,
@@ -112,6 +118,7 @@ class ArchiveValidator:
                 if len(members) > self.limits.max_files:
                     raise ArchiveError("archive exceeds member count limit")
                 files: dict[str, tarfile.TarInfo] = {}
+                links: dict[str, str] = {}
                 seen: set[str] = set()
                 collision_keys: dict[str, str] = {}
                 total_size = 0
@@ -127,8 +134,40 @@ class ArchiveValidator:
                             f"archive paths collide after normalization: {previous}, {path}"
                         )
                     collision_keys[collision_key] = path
-                    if member.issym() or member.islnk():
-                        raise ArchiveError(f"links are forbidden in archives: {path}")
+                    if member.islnk():
+                        raise ArchiveError(f"hard links are forbidden in archives: {path}")
+                    if member.issym():
+                        if not self.allow_internal_links:
+                            raise ArchiveError(f"links are forbidden in archives: {path}")
+                        target = member.linkname
+                        if (
+                            not target
+                            or target.startswith("/")
+                            or "\x00" in target
+                            or "\\" in target
+                            or PurePosixPath(target).is_absolute()
+                        ):
+                            raise ArchiveError(
+                                f"symbolic link must be relative: {path} -> {target!r}"
+                            )
+                        if ".." in PurePosixPath(target).parts:
+                            raise ArchiveError(
+                                f"symbolic link must stay inside the archive: {path} -> {target!r}"
+                            )
+                        resolved = PurePosixPath(path).parent.joinpath(target)
+                        normalized = PurePosixPath(
+                            *(
+                                part
+                                for part in resolved.parts
+                                if part not in {"", "."}
+                            )
+                        )
+                        if ".." in normalized.parts:
+                            raise ArchiveError(
+                                f"symbolic link must stay inside the archive: {path} -> {target!r}"
+                            )
+                        links[path] = target
+                        continue
                     if not (member.isfile() or member.isdir()):
                         raise ArchiveError(f"special archive member is forbidden: {path}")
                     if member.isfile():
@@ -165,11 +204,15 @@ class ArchiveValidator:
 
                 for member in members:
                     path = _safe_path(member.name)
-                    if path.as_posix() in self.manifest_names:
+                    if verify_manifest and path.as_posix() in self.manifest_names:
+                        continue
+                    if member.issym():
                         continue
                     target = destination.joinpath(*path.parts)
                     if member.isdir():
                         target.mkdir(parents=True, exist_ok=True)
+                        continue
+                    if member.islnk():
                         continue
                     target.parent.mkdir(parents=True, exist_ok=True)
                     source = tar.extractfile(member)
@@ -200,6 +243,27 @@ class ArchiveValidator:
                         raise ArchiveError(f"file sha256 mismatch: {path.as_posix()}")
                     safe_mode = member.mode & 0o755
                     os.chmod(target, safe_mode or 0o600, follow_symlinks=False)
+                for path, target_name in sorted(links.items()):
+                    link_path = destination.joinpath(*PurePosixPath(path).parts)
+                    link_path.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        os.symlink(target_name, link_path)
+                    except FileExistsError as exc:
+                        raise ArchiveError(
+                            f"symbolic link collides with an extracted member: {path}"
+                        ) from exc
+                for path in sorted(links):
+                    if not os.path.exists(destination.joinpath(*PurePosixPath(path).parts)):
+                        raise ArchiveError(
+                            f"symbolic link is dangling or cyclic: {path} -> {links[path]!r}"
+                        )
+                resolved_root = os.path.realpath(destination)
+                for path in sorted(links):
+                    link_path = destination.joinpath(*PurePosixPath(path).parts)
+                    if not os.path.realpath(link_path).startswith(resolved_root + os.sep):
+                        raise ArchiveError(
+                            f"symbolic link resolves outside the archive: {path}"
+                        )
             return destination
         except Exception:
             import shutil
